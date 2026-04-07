@@ -7,20 +7,20 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')
 
 from src.api.schemas import IngestRequest, QueryRequest
 from src.engine.rag_core import rag_engine
-from src.engine.llm_engine import llm_oracle 
+from src.engine.llm_engine import answer_generator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Swedish Tax Law RAG Oracle API",
+    title="Swedish Tax Law RAG Assistant API",
     description="RAG engine with encryption for Swedish tax laws.",
     version="1.0.0"
 )
 
 @app.get("/")
 def health_check():
-    return {"status": "ACTIVE", "service": "Swedish Tax RAG Oracle"}
+    return {"status": "ACTIVE", "service": "Swedish Tax RAG Assistant"}
 
 @app.post("/api/v1/ingest", summary="Upload New Document")
 def ingest_document(request: IngestRequest):
@@ -50,7 +50,7 @@ def retrieve_and_generate(request: QueryRequest):
             }
         
         # 2. Generate an answer using llm.
-        ai_answer = llm_oracle.generate_answer(request.query, contexts)
+        ai_answer = answer_generator.generate_answer(request.query, contexts)
         
         return {
             "query": request.query, 

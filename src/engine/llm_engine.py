@@ -10,7 +10,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class GenerativeOracle:
+class AnswerGenerator:
     def __init__(self):
         self.model_path = settings.LLM_MODEL_PATH
         
@@ -54,4 +54,4 @@ class GenerativeOracle:
         response = self.tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
         return response.strip()
 
-llm_oracle = GenerativeOracle()
+answer_generator = AnswerGenerator()

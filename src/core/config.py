@@ -6,7 +6,7 @@ load_dotenv()
 
 class Settings:
     # --- Project Metadatas ---
-    PROJECT_NAME = "Swedish Tax Law RAG Oracle"
+    PROJECT_NAME = "Swedish Tax Law RAG Assistant"
     PROJECT_VERSION = "1.0.0"
     PROJECT_DESCRIPTION = "RAG engine with encryption for Swedish tax laws."
 

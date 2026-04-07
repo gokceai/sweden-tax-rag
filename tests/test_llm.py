@@ -3,7 +3,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.engine.llm_engine import llm_oracle
+from src.engine.llm_engine import answer_generator
 
 def run_test():
     print("--- Llama 3.2 Generative AI Test ---")
@@ -20,7 +20,7 @@ def run_test():
     print("The response is being generated (This process may take 10-30 seconds depending on the speed of your computer)...\n")
     
     # Generate the answer
-    final_answer = llm_oracle.generate_answer(query, mock_contexts)
+    final_answer = answer_generator.generate_answer(query, mock_contexts)
     
     print("Llama 3.2 Answer:")
     print("-" * 40)

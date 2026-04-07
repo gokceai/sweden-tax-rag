@@ -70,7 +70,7 @@ with col2:
                             st.warning("No legal context was found in the database for this question.")
                         else:
                             # AI's Answer in Its Own Words
-                            st.success(" AI Oracle Answer:")
+                            st.success("AI Assistant Answer:")
                             st.write(f"**{answer}**")
                             
                             st.divider()
