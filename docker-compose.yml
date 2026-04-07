@@ -1,0 +1,21 @@
+services:
+  dynamodb-local:
+    image: "amazon/dynamodb-local:latest"
+    container_name: sweden-tax-dynamo
+    ports:
+      - "8000:8000"
+    volumes:
+      - "./docker/dynamodb_data:/home/dynamodblocal/data"
+    working_dir: /home/dynamodblocal
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: sweden-tax-chroma
+    ports:
+      - "8001:8000"
+    volumes:
+      - "./docker/chroma_data:/chroma/persist"
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
