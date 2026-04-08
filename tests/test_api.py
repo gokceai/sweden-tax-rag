@@ -19,6 +19,31 @@ class FakeRagEngine:
             "is_consistent": True,
         }
 
+    def repair_indexes(self, only_in_chroma_action, only_in_dynamo_action):
+        return {
+            "pre_reconcile": {
+                "total_chroma_ids": 2,
+                "total_dynamo_ids": 2,
+                "only_in_chroma": ["c1"],
+                "only_in_dynamo": ["d1"],
+                "is_consistent": False,
+            },
+            "actions": {
+                "only_in_chroma_action": only_in_chroma_action,
+                "only_in_dynamo_action": only_in_dynamo_action,
+            },
+            "repaired": {"only_in_chroma": ["c1"], "only_in_dynamo": ["d1"]},
+            "marked_for_review": {"only_in_chroma": [], "only_in_dynamo": []},
+            "failed": {"only_in_chroma": [], "only_in_dynamo": []},
+            "post_reconcile": {
+                "total_chroma_ids": 2,
+                "total_dynamo_ids": 2,
+                "only_in_chroma": [],
+                "only_in_dynamo": [],
+                "is_consistent": True,
+            },
+        }
+
 
 class FakeAnswerGenerator:
     def generate_answer(self, query, contexts):
@@ -57,3 +82,31 @@ def test_reconcile_endpoint(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["is_consistent"] is True
+
+
+def test_repair_endpoint(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/reconcile/repair",
+        json={
+            "only_in_chroma_action": "delete",
+            "only_in_dynamo_action": "rehydrate",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["actions"]["only_in_chroma_action"] == "delete"
+    assert response.json()["post_reconcile"]["is_consistent"] is True
+
+
+def test_last_reconcile_endpoint(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    client = TestClient(app)
+
+    client.get("/api/v1/reconcile")
+    response = client.get("/api/v1/reconcile/last")
+
+    assert response.status_code == 200
+    assert response.json()["report"]["is_consistent"] is True

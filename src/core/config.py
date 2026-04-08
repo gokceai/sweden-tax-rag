@@ -30,6 +30,8 @@ class Settings:
     MASTER_ENCRYPTION_KEY = os.getenv("MASTER_ENCRYPTION_KEY")
     RETURN_CONTEXTS_IN_RESPONSE = os.getenv("RETURN_CONTEXTS_IN_RESPONSE", "false").lower() == "true"
     ENABLE_INGEST_UI = os.getenv("ENABLE_INGEST_UI", "false").lower() == "true"
+    RECONCILE_AUTORUN = os.getenv("RECONCILE_AUTORUN", "false").lower() == "true"
+    RECONCILE_INTERVAL_SECONDS = int(os.getenv("RECONCILE_INTERVAL_SECONDS", 300))
 
     # AI and RAG settings
     LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "meta-llama/Llama-3.2-1B-Instruct")

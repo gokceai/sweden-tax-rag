@@ -147,6 +147,70 @@ with st.sidebar:
         except requests.RequestException:
             st.error("API is not reachable")
 
+    st.markdown("---")
+    st.subheader("Consistency")
+    if st.button("Run Reconcile"):
+        try:
+            reconcile_resp = requests.get(f"{API_URL}/reconcile", timeout=30)
+            if reconcile_resp.status_code == 200:
+                report = reconcile_resp.json()
+                if report.get("is_consistent"):
+                    st.success("Chroma and Dynamo are consistent.")
+                else:
+                    st.warning(
+                        f"Drift found | only_in_chroma={len(report.get('only_in_chroma', []))}, "
+                        f"only_in_dynamo={len(report.get('only_in_dynamo', []))}"
+                    )
+            else:
+                st.error(f"Reconcile failed ({reconcile_resp.status_code})")
+        except requests.RequestException as exc:
+            st.error(f"Reconcile connection error: {exc}")
+
+    if st.button("Repair (Delete Chroma Orphans + Rehydrate Dynamo)"):
+        try:
+            repair_resp = requests.post(
+                f"{API_URL}/reconcile/repair",
+                json={
+                    "only_in_chroma_action": "delete",
+                    "only_in_dynamo_action": "rehydrate",
+                },
+                timeout=60,
+            )
+            if repair_resp.status_code == 200:
+                repair_report = repair_resp.json()
+                post = repair_report.get("post_reconcile", {})
+                if post.get("is_consistent"):
+                    st.success("Repair completed. Stores are now consistent.")
+                else:
+                    st.warning("Repair completed with remaining drift. Check API logs/report.")
+            else:
+                st.error(f"Repair failed ({repair_resp.status_code})")
+        except requests.RequestException as exc:
+            st.error(f"Repair connection error: {exc}")
+
+    if st.button("Show Last Reconcile"):
+        try:
+            last_resp = requests.get(f"{API_URL}/reconcile/last", timeout=30)
+            if last_resp.status_code == 200:
+                payload = last_resp.json()
+                result = payload.get("result")
+                if result is None:
+                    st.info(payload.get("message", "No reconcile result yet."))
+                else:
+                    report = payload.get("report", {})
+                    st.caption(f"Checked at: {payload.get('checked_at')} ({payload.get('source')})")
+                    st.write(
+                        {
+                            "is_consistent": report.get("is_consistent"),
+                            "only_in_chroma": len(report.get("only_in_chroma", [])),
+                            "only_in_dynamo": len(report.get("only_in_dynamo", [])),
+                        }
+                    )
+            else:
+                st.error(f"Could not fetch last result ({last_resp.status_code})")
+        except requests.RequestException as exc:
+            st.error(f"Last reconcile connection error: {exc}")
+
 if settings.ENABLE_INGEST_UI:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
     st.subheader("Document Ingest")

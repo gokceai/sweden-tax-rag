@@ -105,3 +105,19 @@ def test_reconcile_indexes_reports_orphans():
     assert result["is_consistent"] is False
     assert result["only_in_chroma"] == ["chunk-1"]
     assert result["only_in_dynamo"] == ["chunk-3"]
+
+
+def test_repair_indexes_delete_and_rehydrate():
+    vector_db = FakeVectorDB(add_result=True)
+    repo = FakeDocumentRepo(save_result=True)
+    engine = RAGEngine(vector_db=vector_db, document_repo=repo, settings=settings)
+
+    result = engine.repair_indexes(
+        only_in_chroma_action="delete",
+        only_in_dynamo_action="rehydrate",
+    )
+
+    assert result["actions"]["only_in_chroma_action"] == "delete"
+    assert result["actions"]["only_in_dynamo_action"] == "rehydrate"
+    assert result["repaired"]["only_in_chroma"] == ["chunk-1"]
+    assert result["repaired"]["only_in_dynamo"] == ["chunk-3"]

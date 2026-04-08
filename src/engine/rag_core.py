@@ -60,6 +60,68 @@ class RAGEngine:
             "is_consistent": not only_in_chroma and not only_in_dynamo,
         }
 
+    def repair_indexes(
+        self,
+        *,
+        only_in_chroma_action: str = "mark_for_review",
+        only_in_dynamo_action: str = "mark_for_review",
+    ) -> dict:
+        """Optionally repair inconsistencies after a reconciliation pass."""
+        pre_report = self.reconcile_indexes()
+        repair_result = {
+            "pre_reconcile": pre_report,
+            "actions": {
+                "only_in_chroma_action": only_in_chroma_action,
+                "only_in_dynamo_action": only_in_dynamo_action,
+            },
+            "repaired": {
+                "only_in_chroma": [],
+                "only_in_dynamo": [],
+            },
+            "marked_for_review": {
+                "only_in_chroma": [],
+                "only_in_dynamo": [],
+            },
+            "failed": {
+                "only_in_chroma": [],
+                "only_in_dynamo": [],
+            },
+        }
+
+        for chunk_id in pre_report["only_in_chroma"]:
+            if only_in_chroma_action == "delete":
+                try:
+                    self.vector_db.delete_vector(chunk_id)
+                    repair_result["repaired"]["only_in_chroma"].append(chunk_id)
+                except InfrastructureError:
+                    repair_result["failed"]["only_in_chroma"].append(chunk_id)
+            else:
+                repair_result["marked_for_review"]["only_in_chroma"].append(chunk_id)
+
+        for chunk_id in pre_report["only_in_dynamo"]:
+            if only_in_dynamo_action == "delete":
+                try:
+                    self.document_repo.delete_document_chunk(chunk_id)
+                    repair_result["repaired"]["only_in_dynamo"].append(chunk_id)
+                except InfrastructureError:
+                    repair_result["failed"]["only_in_dynamo"].append(chunk_id)
+            elif only_in_dynamo_action == "rehydrate":
+                chunk = self.document_repo.get_document_chunk(chunk_id)
+                chunk_text = chunk.get("decrypted_text") if chunk else None
+                if not chunk_text:
+                    repair_result["failed"]["only_in_dynamo"].append(chunk_id)
+                    continue
+                upserted = self.vector_db.add_or_update_vector(chunk_id, chunk_text)
+                if upserted:
+                    repair_result["repaired"]["only_in_dynamo"].append(chunk_id)
+                else:
+                    repair_result["failed"]["only_in_dynamo"].append(chunk_id)
+            else:
+                repair_result["marked_for_review"]["only_in_dynamo"].append(chunk_id)
+
+        repair_result["post_reconcile"] = self.reconcile_indexes()
+        return repair_result
+
     def retrieve_context(self, query: str, top_k: int = 2) -> list:
         """Retrieve top-k decrypted chunks for the query."""
         logger.info("Retrieving context for query '%s'", query)

@@ -167,6 +167,8 @@ Main endpoints:
 - `POST /api/v1/ingest`
 - `POST /api/v1/retrieve`
 - `GET /api/v1/reconcile`
+- `GET /api/v1/reconcile/last`
+- `POST /api/v1/reconcile/repair`
 
 ## Run The Streamlit UI
 
@@ -205,6 +207,12 @@ Run the automated unit tests:
 pytest -q
 ```
 
+Run integration test (requires local Docker services + encryption key):
+
+```powershell
+pytest -q -m integration
+```
+
 Optional manual DB inspection:
 
 ```powershell
@@ -229,6 +237,8 @@ Relevant values in `src/core/config.py`:
 - `LLM_MAX_NEW_TOKENS`
 - `LLM_TEMPERATURE`
 - `RETURN_CONTEXTS_IN_RESPONSE`
+- `RECONCILE_AUTORUN`
+- `RECONCILE_INTERVAL_SECONDS`
 
 At the moment, not every module actually respects these settings consistently. Some database connection values are still hard-coded in the client classes.
 
@@ -268,6 +278,41 @@ High-level direction:
 3. Replace script-style tests with automated unit and integration tests
 4. Add failure handling for partial ingest writes
 5. Tighten the security boundary around decrypted text
+
+## Reconciliation Runbook
+
+Use this runbook when Chroma and Dynamo drift apart.
+
+1. Detect drift
+
+```powershell
+curl http://localhost:8080/api/v1/reconcile
+```
+
+2. Review categories
+- `only_in_chroma`: vector exists but encrypted text does not.
+- `only_in_dynamo`: encrypted text exists but vector does not.
+
+3. Choose repair strategy
+- `only_in_chroma_action=delete` removes orphan vectors.
+- `only_in_dynamo_action=rehydrate` decrypts Dynamo chunk and recreates vector.
+- `mark_for_review` leaves records untouched and flags them in response.
+
+4. Execute repair
+
+```powershell
+curl -X POST http://localhost:8080/api/v1/reconcile/repair `
+  -H "Content-Type: application/json" `
+  -d "{\"only_in_chroma_action\":\"delete\",\"only_in_dynamo_action\":\"rehydrate\"}"
+```
+
+5. Validate final state
+
+```powershell
+curl http://localhost:8080/api/v1/reconcile/last
+```
+
+If `is_consistent=false` remains after repair, inspect `failed` and `marked_for_review` lists and triage those IDs manually.
 
 ## License
 
