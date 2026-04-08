@@ -6,6 +6,13 @@ API_URL = settings.API_BASE_URL
 
 st.set_page_config(page_title=settings.PROJECT_NAME, page_icon="SE", layout="wide")
 
+
+def _admin_headers(admin_key: str) -> dict:
+    headers = {}
+    if admin_key.strip():
+        headers["X-Admin-Key"] = admin_key.strip()
+    return headers
+
 st.markdown(
     """
     <style>
@@ -147,11 +154,17 @@ with st.sidebar:
         except requests.RequestException:
             st.error("API is not reachable")
 
+    admin_api_key = st.text_input("Admin API Key", type="password", help="Required when ENFORCE_ADMIN_AUTH=true")
+
     st.markdown("---")
     st.subheader("Consistency")
     if st.button("Run Reconcile"):
         try:
-            reconcile_resp = requests.get(f"{API_URL}/reconcile", timeout=30)
+            reconcile_resp = requests.get(
+                f"{API_URL}/reconcile",
+                headers=_admin_headers(admin_api_key),
+                timeout=30,
+            )
             if reconcile_resp.status_code == 200:
                 report = reconcile_resp.json()
                 if report.get("is_consistent"):
@@ -174,6 +187,7 @@ with st.sidebar:
                     "only_in_chroma_action": "delete",
                     "only_in_dynamo_action": "rehydrate",
                 },
+                headers=_admin_headers(admin_api_key),
                 timeout=60,
             )
             if repair_resp.status_code == 200:
@@ -190,7 +204,11 @@ with st.sidebar:
 
     if st.button("Show Last Reconcile"):
         try:
-            last_resp = requests.get(f"{API_URL}/reconcile/last", timeout=30)
+            last_resp = requests.get(
+                f"{API_URL}/reconcile/last",
+                headers=_admin_headers(admin_api_key),
+                timeout=30,
+            )
             if last_resp.status_code == 200:
                 payload = last_resp.json()
                 result = payload.get("result")
@@ -229,6 +247,7 @@ if settings.ENABLE_INGEST_UI:
                 response = requests.post(
                     f"{API_URL}/ingest",
                     json={"document_text": document_text, "source_name": source_name},
+                    headers=_admin_headers(admin_api_key),
                     timeout=60,
                 )
                 if response.status_code == 200:

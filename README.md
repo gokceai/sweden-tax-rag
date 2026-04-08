@@ -170,6 +170,16 @@ Main endpoints:
 - `GET /api/v1/reconcile/last`
 - `POST /api/v1/reconcile/repair`
 
+When `ENFORCE_ADMIN_AUTH=true`, admin endpoints require header:
+
+- `X-Admin-Key: <ADMIN_API_KEY>`
+
+Protected endpoints:
+- `POST /api/v1/ingest`
+- `GET /api/v1/reconcile`
+- `GET /api/v1/reconcile/last`
+- `POST /api/v1/reconcile/repair`
+
 ## Run The Streamlit UI
 
 ```powershell
@@ -239,6 +249,8 @@ Relevant values in `src/core/config.py`:
 - `RETURN_CONTEXTS_IN_RESPONSE`
 - `RECONCILE_AUTORUN`
 - `RECONCILE_INTERVAL_SECONDS`
+- `ENFORCE_ADMIN_AUTH`
+- `ADMIN_API_KEY`
 
 At the moment, not every module actually respects these settings consistently. Some database connection values are still hard-coded in the client classes.
 

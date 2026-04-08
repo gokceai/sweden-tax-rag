@@ -110,3 +110,55 @@ def test_last_reconcile_endpoint(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["report"]["is_consistent"] is True
+
+
+def test_admin_auth_requires_key_for_ingest(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", True)
+    monkeypatch.setattr("src.core.config.settings.ADMIN_API_KEY", "secret-key")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/ingest",
+        json={"document_text": "x" * 20, "source_name": "source.txt"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_admin_auth_accepts_valid_key_for_ingest(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", True)
+    monkeypatch.setattr("src.core.config.settings.ADMIN_API_KEY", "secret-key")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/ingest",
+        json={"document_text": "x" * 20, "source_name": "source.txt"},
+        headers={"X-Admin-Key": "secret-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["chunks_processed"] == 2
+
+
+def test_retrieve_remains_public_when_admin_auth_enabled(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.api.main.get_answer_generator", lambda: FakeAnswerGenerator())
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", True)
+    monkeypatch.setattr("src.core.config.settings.ADMIN_API_KEY", "secret-key")
+    client = TestClient(app)
+
+    response = client.post("/api/v1/retrieve", json={"query": "vat rate", "top_k": 2})
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == "grounded answer"
+
+
+def test_request_id_header_is_propagated():
+    client = TestClient(app)
+
+    response = client.get("/", headers={"X-Request-ID": "req-123"})
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Request-ID") == "req-123"

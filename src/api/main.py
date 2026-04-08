@@ -1,13 +1,14 @@
 import logging
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 
 from src.api.schemas import IngestRequest, QueryRequest, ReconcileRepairRequest
 from src.core.config import settings
-from src.core.dependencies import get_answer_generator, get_rag_engine
+from src.core.dependencies import get_answer_generator, get_rag_engine, require_admin_access
 from src.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,37 @@ app = FastAPI(
     description=settings.PROJECT_DESCRIPTION,
     version=settings.PROJECT_VERSION,
 )
+
+
+@app.middleware("http")
+async def add_request_context(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    started_at = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        logger.exception(
+            "request_failed request_id=%s method=%s path=%s duration_ms=%s",
+            request_id,
+            request.method,
+            request.url.path,
+            duration_ms,
+        )
+        raise
+
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request_completed request_id=%s method=%s path=%s status=%s duration_ms=%s",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 
 def _utc_now_iso() -> str:
@@ -78,7 +110,7 @@ def health_check():
 
 
 @app.post("/api/v1/ingest", summary="Upload New Document")
-def ingest_document(request: IngestRequest):
+def ingest_document(request: IngestRequest, _: None = Depends(require_admin_access)):
     try:
         rag_engine = get_rag_engine()
         chunks_saved = rag_engine.ingest_document(request.document_text, request.source_name)
@@ -124,7 +156,7 @@ def retrieve_and_generate(request: QueryRequest):
 
 
 @app.get("/api/v1/reconcile", summary="Check Chroma and Dynamo consistency")
-def reconcile_storage():
+def reconcile_storage(_: None = Depends(require_admin_access)):
     try:
         rag_engine = get_rag_engine()
         report = rag_engine.reconcile_indexes()
@@ -143,7 +175,7 @@ def reconcile_storage():
 
 
 @app.get("/api/v1/reconcile/last", summary="Get last reconciliation result")
-def get_last_reconcile_result():
+def get_last_reconcile_result(_: None = Depends(require_admin_access)):
     result = getattr(app.state, "last_reconcile_result", None)
     if not result:
         return {
@@ -154,7 +186,10 @@ def get_last_reconcile_result():
 
 
 @app.post("/api/v1/reconcile/repair", summary="Repair Chroma/Dynamo inconsistencies")
-def repair_storage(request: ReconcileRepairRequest):
+def repair_storage(
+    request: ReconcileRepairRequest,
+    _: None = Depends(require_admin_access),
+):
     try:
         rag_engine = get_rag_engine()
         repair_report = rag_engine.repair_indexes(
