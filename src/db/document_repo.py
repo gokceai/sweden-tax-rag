@@ -1,59 +1,76 @@
 import logging
-from src.db.dynamo_client import dynamo_db
-from src.core.security import encryption_engine
 
-logging.basicConfig(level=logging.INFO)
+from src.core.exceptions import InfrastructureError
+
 logger = logging.getLogger(__name__)
 
+
 class DocumentRepository:
-    def __init__(self):
-        # We make sure the table is ready before we proceed with any transactions.
-        self.table = dynamo_db.create_table_if_not_exists()
+    def __init__(self, table, encryption_manager):
+        self.table = table
+        self.encryption_manager = encryption_manager
 
     def save_document_chunk(self, chunk_id: str, original_text: str, metadata: dict):
-        """It writes the text, along with its encryption and metadata, to DynamoDB."""
+        """Encrypt and store chunk payload in DynamoDB."""
         try:
-            # 1. Encrypt Text
-            encrypted_text = encryption_engine.encrypt_data(original_text)
-            
-            # 2. Prepare the JSON format (Item) to be sent to DynamoDB.
+            encrypted_text = self.encryption_manager.encrypt_data(original_text)
             item = {
-                'chunk_id': chunk_id,
-                'encrypted_text': encrypted_text,
-                'source': metadata.get('source', 'unknown'),
-                'page_number': metadata.get('page_number', 0)
+                "chunk_id": chunk_id,
+                "encrypted_text": encrypted_text,
+                "source": metadata.get("source", "unknown"),
+                "chunk_index": metadata.get("chunk_index", 0),
             }
-            
-            # 3.Write to the database
             self.table.put_item(Item=item)
-            logger.info(f"Chunk '{chunk_id}' It has been successfully encrypted and saved.")
+            logger.info("Chunk '%s' encrypted and saved.", chunk_id)
             return True
         except Exception as e:
-            logger.error(f"Recording error ({chunk_id}): {e}")
+            logger.error("Chunk save failed (%s): %s", chunk_id, e)
             return False
 
     def get_document_chunk(self, chunk_id: str):
-        """It retrieves the encrypted data from DynamoDB and converts it into plain text usable by the LLM."""
+        """Read encrypted chunk from DynamoDB and decrypt in-memory."""
         try:
-            response = self.table.get_item(Key={'chunk_id': chunk_id})
-            
-            if 'Item' not in response:
-                logger.warning(f"Chunk '{chunk_id}' not found.")
+            response = self.table.get_item(Key={"chunk_id": chunk_id})
+            if "Item" not in response:
+                logger.warning("Chunk '%s' not found.", chunk_id)
                 return None
-            
-            item = response['Item']
-            
-            # Decrypt the code
-            decrypted_text = encryption_engine.decrypt_data(item['encrypted_text'])
-            
-            # Add the decrypted text to the dictionary, and remove the encrypted text from memory.
-            item['decrypted_text'] = decrypted_text
-            del item['encrypted_text'] 
-            
+
+            item = response["Item"]
+            decrypted_text = self.encryption_manager.decrypt_data(item["encrypted_text"])
+            item["decrypted_text"] = decrypted_text
+            del item["encrypted_text"]
             return item
         except Exception as e:
-            logger.error(f"Reading error({chunk_id}): {e}")
+            logger.error("Chunk read failed (%s): %s", chunk_id, e)
             return None
 
-# instance to be used throughout the project
-doc_repo = DocumentRepository()
+    def has_document_chunk(self, chunk_id: str) -> bool:
+        try:
+            response = self.table.get_item(Key={"chunk_id": chunk_id}, ProjectionExpression="chunk_id")
+            return "Item" in response
+        except Exception as e:
+            logger.error("Chunk existence check failed (%s): %s", chunk_id, e)
+            return False
+
+    def delete_document_chunk(self, chunk_id: str) -> None:
+        try:
+            self.table.delete_item(Key={"chunk_id": chunk_id})
+        except Exception as e:
+            raise InfrastructureError(f"DynamoDB delete failed for {chunk_id}: {e}") from e
+
+    def list_chunk_ids(self) -> set[str]:
+        try:
+            ids: set[str] = set()
+            response = self.table.scan(ProjectionExpression="chunk_id")
+            for item in response.get("Items", []):
+                ids.add(item["chunk_id"])
+            while "LastEvaluatedKey" in response:
+                response = self.table.scan(
+                    ProjectionExpression="chunk_id",
+                    ExclusiveStartKey=response["LastEvaluatedKey"],
+                )
+                for item in response.get("Items", []):
+                    ids.add(item["chunk_id"])
+            return ids
+        except Exception as e:
+            raise InfrastructureError(f"DynamoDB list IDs failed: {e}") from e

@@ -1,33 +1,107 @@
-import sys
-import os
+import pytest
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.core.config import settings
+from src.core.exceptions import DataIntegrityError
+from src.engine.rag_core import RAGEngine
 
-from src.engine.rag_core import rag_engine
 
-def run_test():
-    print("--- RAG Engine End-to-End Test ---")
-    
-    # A short document describing the Swedish tax system (Two paragraphs = Two chunks)
-    swedish_tax_doc = """
-    The Swedish Tax Agency (Skatteverket) requires all businesses registered in Sweden to pay corporate tax. As of the current regulation, the corporate tax rate is strictly 20.6 percent on the annual taxable profit.
+class FakeVectorDB:
+    def __init__(self, add_result=True):
+        self.add_result = add_result
+        self.deleted_ids = []
+        self.search_result = ["id_1"]
 
-    Value Added Tax (VAT), known as 'Moms' in Sweden, generally has a standard rate of 25 percent. However, reduced rates of 12 percent apply to food and hotel stays, and 6 percent applies to books and passenger transport.
-    """
-    
-    print("\n 1.The document is being uploaded to the system. (Chunking -> Vectorization -> Encryption -> DB Storage)...")
-    rag_engine.ingest_document(swedish_tax_doc, source_name="skatteverket_guide_2026")
-    
-    print("\n 2.A question is asked and context is retrieved...")
-    # We don't use specific words like 'Moms' or 12% in the question so that we can measure the system's semantic intelligence.
-    query = "What is the tax rate for staying in a hotel?"
-    contexts = rag_engine.retrieve_context(query, top_k=1)
-    
-    if contexts:
-        print("SUCCESS! Context found to send to LLM.:")
-        print(f"   -> {contexts[0]}")
-    else:
-        print("ERROR: Context could not be retrieved..")
+    def add_or_update_vector(self, chunk_id, text):
+        return self.add_result
 
-if __name__ == "__main__":
-    run_test()
+    def delete_vector(self, chunk_id):
+        self.deleted_ids.append(chunk_id)
+
+    def search_similar_ids(self, query_text, n_results=2):
+        return self.search_result[:n_results]
+
+    def list_ids(self):
+        return {"chunk-1", "chunk-2"}
+
+
+class FakeDocumentRepo:
+    def __init__(self, save_result=True):
+        self.save_result = save_result
+        self.deleted_ids = []
+
+    def save_document_chunk(self, chunk_id, original_text, metadata):
+        return self.save_result
+
+    def delete_document_chunk(self, chunk_id):
+        self.deleted_ids.append(chunk_id)
+
+    def get_document_chunk(self, chunk_id):
+        return {"decrypted_text": "retrieved context"}
+
+    def list_chunk_ids(self):
+        return {"chunk-2", "chunk-3"}
+
+
+def test_ingest_success_counts_chunks():
+    vector_db = FakeVectorDB(add_result=True)
+    repo = FakeDocumentRepo(save_result=True)
+    engine = RAGEngine(vector_db=vector_db, document_repo=repo, settings=settings)
+
+    count = engine.ingest_document("a" * 1000, "source")
+
+    assert count > 0
+
+
+def test_ingest_rolls_back_when_dynamo_write_fails():
+    vector_db = FakeVectorDB(add_result=True)
+    repo = FakeDocumentRepo(save_result=False)
+    engine = RAGEngine(vector_db=vector_db, document_repo=repo, settings=settings)
+
+    with pytest.raises(DataIntegrityError):
+        engine.ingest_document("b" * 800, "source")
+
+    assert len(vector_db.deleted_ids) == 1
+
+
+def test_ingest_rolls_back_when_vector_write_fails():
+    vector_db = FakeVectorDB(add_result=False)
+    repo = FakeDocumentRepo(save_result=True)
+    engine = RAGEngine(vector_db=vector_db, document_repo=repo, settings=settings)
+
+    with pytest.raises(DataIntegrityError):
+        engine.ingest_document("c" * 800, "source")
+
+    assert len(repo.deleted_ids) == 1
+
+
+def test_retrieve_context_returns_decrypted_texts():
+    vector_db = FakeVectorDB(add_result=True)
+    repo = FakeDocumentRepo(save_result=True)
+    engine = RAGEngine(vector_db=vector_db, document_repo=repo, settings=settings)
+
+    contexts = engine.retrieve_context("vat", top_k=1)
+
+    assert contexts == ["retrieved context"]
+
+
+def test_ingest_is_idempotent_for_same_input():
+    vector_db = FakeVectorDB(add_result=True)
+    repo = FakeDocumentRepo(save_result=True)
+    engine = RAGEngine(vector_db=vector_db, document_repo=repo, settings=settings)
+
+    first = engine._build_chunk_id("source", 0, "same chunk")
+    second = engine._build_chunk_id("source", 0, "same chunk")
+
+    assert first == second
+
+
+def test_reconcile_indexes_reports_orphans():
+    vector_db = FakeVectorDB(add_result=True)
+    repo = FakeDocumentRepo(save_result=True)
+    engine = RAGEngine(vector_db=vector_db, document_repo=repo, settings=settings)
+
+    result = engine.reconcile_indexes()
+
+    assert result["is_consistent"] is False
+    assert result["only_in_chroma"] == ["chunk-1"]
+    assert result["only_in_dynamo"] == ["chunk-3"]

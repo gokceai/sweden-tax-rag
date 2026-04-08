@@ -1,222 +1,119 @@
-import streamlit as st
 import requests
-import sys
-import os
-
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+import streamlit as st
 from src.core.config import settings
 
 API_URL = settings.API_BASE_URL
 
 st.set_page_config(page_title=settings.PROJECT_NAME, page_icon="SE", layout="wide")
 
-
 st.markdown(
     """
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+
+        :root {
+            --bg-a: #f4f7f9;
+            --bg-b: #e7edf1;
+            --ink: #11202d;
+            --muted: #4c6172;
+            --brand: #0f766e;
+            --brand-soft: #d7eeeb;
+            --card: rgba(255, 255, 255, 0.78);
+        }
+
         .stApp {
+            font-family: 'Manrope', sans-serif;
             background:
-                radial-gradient(circle at top left, rgba(197, 225, 245, 0.9), transparent 28%),
-                radial-gradient(circle at top right, rgba(228, 233, 240, 0.95), transparent 30%),
-                linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%);
-            color: #17202d;
+                radial-gradient(circle at 8% 8%, rgba(23, 131, 117, 0.09), transparent 22%),
+                radial-gradient(circle at 88% 2%, rgba(17, 24, 39, 0.08), transparent 25%),
+                linear-gradient(160deg, var(--bg-a), var(--bg-b));
+            color: var(--ink);
         }
 
         .block-container {
-            max-width: 1180px;
-            padding-top: 2.4rem;
-            padding-bottom: 2.8rem;
+            max-width: 1120px;
+            padding-top: 2rem;
+            padding-bottom: 2rem;
         }
 
-        .hero-shell {
-            padding: 2.8rem 2.5rem;
-            border-radius: 36px;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.58));
-            border: 1px solid rgba(255, 255, 255, 0.72);
-            box-shadow: 0 18px 45px rgba(30, 41, 59, 0.08);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            margin-bottom: 1.5rem;
+        .hero {
+            padding: 1.4rem 1.5rem;
+            border-radius: 1.1rem;
+            background: var(--card);
+            border: 1px solid rgba(17, 32, 45, 0.08);
+            box-shadow: 0 12px 32px rgba(17, 32, 45, 0.08);
+            margin-bottom: 1rem;
         }
 
         .hero-kicker {
             display: inline-block;
-            padding: 0.45rem 0.9rem;
+            padding: 0.28rem 0.6rem;
             border-radius: 999px;
-            background: rgba(126, 155, 184, 0.14);
-            color: #5f81a8;
-            font-size: 0.82rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
+            background: var(--brand-soft);
+            color: var(--brand);
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
         }
 
         .hero-title {
-            margin: 0 0 0.8rem 0;
-            font-size: 3rem;
-            line-height: 1.02;
-            font-weight: 700;
-            letter-spacing: -0.03em;
+            margin: 0.65rem 0 0.4rem 0;
+            font-size: 2rem;
+            line-height: 1.08;
+            letter-spacing: -0.02em;
         }
 
         .hero-copy {
             margin: 0;
-            max-width: 760px;
-            color: #637082;
-            font-size: 1.03rem;
-            line-height: 1.75;
+            color: var(--muted);
+            font-size: 0.98rem;
+            line-height: 1.6;
         }
 
-        .mini-grid {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0.95rem;
-            margin: 1.2rem 0 2rem 0;
+        .panel {
+            padding: 1rem;
+            border-radius: 1rem;
+            background: var(--card);
+            border: 1px solid rgba(17, 32, 45, 0.08);
+            margin-top: 0.6rem;
+            box-shadow: 0 8px 24px rgba(17, 32, 45, 0.07);
         }
 
-        .mini-card {
-            padding: 1rem 1.05rem;
-            border-radius: 22px;
-            background: rgba(255, 255, 255, 0.74);
-            border: 1px solid rgba(15, 23, 42, 0.08);
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-        }
-
-        .mini-label {
-            color: #637082;
-            font-size: 0.8rem;
-            margin-bottom: 0.3rem;
-        }
-
-        .mini-value {
-            color: #17202d;
-            font-size: 1rem;
-            font-weight: 600;
-        }
-
-        .panel-card {
-            background: rgba(255, 255, 255, 0.74);
-            border: 1px solid rgba(15, 23, 42, 0.08);
-            border-radius: 30px;
-            padding: 1.2rem 1.2rem 1.35rem 1.2rem;
-            box-shadow: 0 18px 45px rgba(30, 41, 59, 0.08);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            margin-bottom: 0.9rem;
-        }
-
-        .panel-title {
-            color: #17202d;
-            font-size: 1.35rem;
+        div[data-testid="stTextInput"] label p,
+        div[data-testid="stTextArea"] label p,
+        div[data-testid="stSlider"] label p {
+            color: #234055 !important;
             font-weight: 700;
-            margin-bottom: 0.3rem;
-        }
-
-        .panel-copy {
-            color: #637082;
-            font-size: 0.96rem;
-            line-height: 1.65;
-            margin-bottom: 0;
-        }
-
-        div[data-testid="stTextInput"] input,
-        div[data-testid="stTextArea"] textarea {
-            background: rgba(255, 255, 255, 0.96);
-            color: #17202d;
-        }
-
-        div[data-testid="stTextInput"] label,
-        div[data-testid="stTextArea"] label,
-        div[data-testid="stSlider"] label,
-        div[data-testid="stMarkdownContainer"] label {
-            color: #17202d !important;
         }
 
         div[data-testid="stTextInput"] p,
         div[data-testid="stTextArea"] p,
         div[data-testid="stSlider"] p {
-            color: #17202d !important;
-            font-weight: 600;
+            color: #315266 !important;
         }
 
-        div[data-testid="stTextInput"] input:focus,
-        div[data-testid="stTextArea"] textarea:focus {
-            border-color: rgba(95, 129, 168, 0.45);
-            box-shadow: 0 0 0 1px rgba(95, 129, 168, 0.18);
+        div[data-testid="stMetricLabel"] p {
+            color: #234055 !important;
+            font-weight: 700;
+        }
+
+        div[data-testid="stMetricValue"] {
+            color: #315266 !important;
+            font-weight: 700;
         }
 
         .stButton > button {
-            width: 100%;
-            min-height: 3rem;
-            border: none;
             border-radius: 999px;
-            background: linear-gradient(135deg, #91acc7, #7091b5);
+            border: none;
+            background: linear-gradient(135deg, #178375, #0f766e);
             color: #ffffff;
-            font-weight: 600;
-            box-shadow: 0 12px 24px rgba(95, 129, 168, 0.24);
-            transition: all 0.2s ease;
+            font-weight: 700;
+            min-height: 2.8rem;
         }
 
         .stButton > button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 16px 28px rgba(95, 129, 168, 0.3);
-        }
-
-        div[data-testid="stAlert"] {
-            border-radius: 20px;
-            border: 1px solid rgba(15, 23, 42, 0.06);
-        }
-
-        .answer-card {
-            padding: 1.15rem 1.2rem;
-            border-radius: 24px;
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(245, 248, 251, 0.93));
-            border: 1px solid rgba(15, 23, 42, 0.08);
-            box-shadow: 0 16px 34px rgba(30, 41, 59, 0.08);
-            margin-top: 0.8rem;
-            margin-bottom: 1rem;
-        }
-
-        .answer-eyebrow {
-            color: #5f81a8;
-            font-size: 0.8rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            margin-bottom: 0.55rem;
-        }
-
-        .answer-copy {
-            color: #17202d;
-            font-size: 1rem;
-            line-height: 1.75;
-            margin: 0;
-        }
-
-        .context-card {
-            padding: 1rem;
-            border-radius: 20px;
-            background: rgba(255, 255, 255, 0.74);
-            border: 1px solid rgba(15, 23, 42, 0.07);
-            margin-bottom: 0.8rem;
-        }
-
-        .context-title {
-            color: #5f81a8;
-            font-size: 0.84rem;
-            font-weight: 700;
-            margin-bottom: 0.4rem;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-        }
-
-        .context-copy {
-            color: #17202d;
-            font-size: 0.95rem;
-            line-height: 1.72;
-            margin: 0;
+            background: linear-gradient(135deg, #147064, #0c5f59);
         }
     </style>
     """,
@@ -225,136 +122,96 @@ st.markdown(
 
 st.markdown(
     f"""
-    <section class="hero-shell">
-        <div class="hero-kicker">Private RAG Workspace</div>
+    <section class="hero">
+        <span class="hero-kicker">Secure RAG Workspace</span>
         <h1 class="hero-title">{settings.PROJECT_NAME}</h1>
         <p class="hero-copy">
-            A calm, refined workspace for ingesting Swedish tax material, retrieving the most relevant
-            encrypted context, and generating concise grounded answers with a local language model.
+            Ingest source text, run semantic retrieval, and generate grounded responses.
+            Encrypted chunks stay in document storage while vectors stay in Chroma.
         </p>
     </section>
     """,
     unsafe_allow_html=True,
 )
 
-st.markdown(
-    """
-    <div class="mini-grid">
-        <div class="mini-card">
-            <div class="mini-label">Storage Pattern</div>
-            <div class="mini-value">Vectors in ChromaDB, encrypted text in DynamoDB</div>
-        </div>
-        <div class="mini-card">
-            <div class="mini-label">Retrieval Style</div>
-            <div class="mini-value">Semantic search powered by local embeddings</div>
-        </div>
-        <div class="mini-card">
-            <div class="mini-label">Answer Layer</div>
-            <div class="mini-value">Local Llama-compatible response generation</div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+with st.sidebar:
+    st.subheader("Connection")
+    st.caption(f"API base: `{API_URL}`")
+    if st.button("Check API Health"):
+        try:
+            health = requests.get(API_URL.replace("/api/v1", ""), timeout=10)
+            if health.status_code == 200:
+                st.success("API is reachable")
+            else:
+                st.warning(f"API responded with {health.status_code}")
+        except requests.RequestException:
+            st.error("API is not reachable")
 
-left_col, right_col = st.columns([1.02, 1.28], gap="large")
-
-with left_col:
-    st.markdown(
-        """
-        <div class="panel-card">
-            <div class="panel-title">Document Ingest</div>
-            <div class="panel-copy">
-                Add source text to the knowledge base. The service splits the content into chunks,
-                generates embeddings, and stores the original text in encrypted form.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    source_name = st.text_input("Document Source", value="skatteverket_guide.txt")
+if settings.ENABLE_INGEST_UI:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.subheader("Document Ingest")
+    source_name = st.text_input("Source name", value="skatteverket_guide.txt")
     document_text = st.text_area(
-        "Document Text",
-        height=290,
-        placeholder="Paste Swedish tax rules, policy notes, or source excerpts here...",
+        "Document text",
+        height=260,
+        placeholder="Paste source content here...",
     )
 
-    if st.button("Upload Securely", type="primary"):
-        if len(document_text) < 10:
-            st.warning("Please enter at least 10 characters of source text.")
+    if st.button("Upload", type="primary"):
+        if len(document_text.strip()) < 10:
+            st.warning("Document text must be at least 10 characters.")
         else:
-            with st.spinner("Splitting, embedding, encrypting, and storing the document..."):
-                try:
-                    response = requests.post(
-                        f"{API_URL}/ingest",
-                        json={"document_text": document_text, "source_name": source_name},
+            try:
+                response = requests.post(
+                    f"{API_URL}/ingest",
+                    json={"document_text": document_text, "source_name": source_name},
+                    timeout=60,
+                )
+                if response.status_code == 200:
+                    payload = response.json()
+                    st.success(
+                        f"{payload.get('chunks_processed', 0)} chunks processed for {payload.get('source', source_name)}."
                     )
-                    if response.status_code == 200:
-                        data = response.json()
-                        st.success(f"{data['chunks_processed']} chunks were processed and stored securely.")
+                else:
+                    st.error(f"Ingest failed ({response.status_code}): {response.text}")
+            except requests.RequestException as exc:
+                st.error(f"API connection error: {exc}")
+    st.markdown('</div>', unsafe_allow_html=True)
+else:
+    st.info("Ingest UI is disabled. This workspace is running in question-only mode.")
+
+query = st.text_input("Question", placeholder="What VAT rate applies to hotel stays?")
+top_k = st.slider("Top K contexts", min_value=1, max_value=5, value=2)
+
+if st.button("Generate Answer"):
+    if len(query.strip()) < 5:
+        st.warning("Question must be at least 5 characters.")
+    else:
+        try:
+            response = requests.post(
+                f"{API_URL}/retrieve",
+                json={"query": query, "top_k": top_k},
+                timeout=90,
+            )
+            if response.status_code == 200:
+                payload = response.json()
+                answer = payload.get("answer", "")
+                contexts = payload.get("contexts")
+
+                st.markdown("### Answer")
+                st.write(answer)
+
+                if isinstance(contexts, list):
+                    if contexts:
+                        st.markdown("### Retrieved Context")
+                        for idx, context in enumerate(contexts, start=1):
+                            with st.expander(f"Context {idx}"):
+                                st.write(context)
                     else:
-                        st.error(f"Server error: {response.text}")
-                except requests.exceptions.ConnectionError:
-                    st.error("The API is unreachable. Please ensure the FastAPI server on port 8080 is running.")
-
-with right_col:
-    st.markdown(
-        """
-        <div class="panel-card">
-            <div class="panel-title">Ask The Knowledge Base</div>
-            <div class="panel-copy">
-                Search the ingested material semantically, retrieve the most relevant context,
-                and generate a direct answer grounded in the retrieved text.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    query = st.text_input("Your Question", placeholder="For example: What VAT rate applies to hotel stays?")
-    top_k = st.slider("Retrieved Context Count", min_value=1, max_value=5, value=2)
-
-    if st.button("Generate Answer"):
-        if len(query) < 5:
-            st.warning("Please enter a more complete question.")
-        else:
-            with st.spinner("Retrieving context and generating an answer..."):
-                try:
-                    response = requests.post(
-                        f"{API_URL}/retrieve",
-                        json={"query": query, "top_k": top_k},
-                    )
-                    if response.status_code == 200:
-                        data = response.json()
-                        answer = data.get("answer", "")
-                        contexts = data.get("contexts", [])
-
-                        if not contexts:
-                            st.warning("No matching legal context was found for this question.")
-                        else:
-                            st.markdown(
-                                f"""
-                                <div class="answer-card">
-                                    <div class="answer-eyebrow">AI Assistant Answer</div>
-                                    <p class="answer-copy">{answer}</p>
-                                </div>
-                                """,
-                                unsafe_allow_html=True,
-                            )
-
-                            st.markdown("### Retrieved Context")
-                            for index, context in enumerate(contexts, start=1):
-                                st.markdown(
-                                    f"""
-                                    <div class="context-card">
-                                        <div class="context-title">Reference {index}</div>
-                                        <p class="context-copy">{context}</p>
-                                    </div>
-                                    """,
-                                    unsafe_allow_html=True,
-                                )
-                    else:
-                        st.error(f"Server error: {response.text}")
-                except requests.exceptions.ConnectionError:
-                    st.error("The API is unreachable. Please ensure the FastAPI server on port 8080 is running.")
+                        st.info("No context matched this question.")
+                else:
+                    st.caption("Context visibility is disabled by server configuration.")
+            else:
+                st.error(f"Retrieve failed ({response.status_code}): {response.text}")
+        except requests.RequestException as exc:
+            st.error(f"API connection error: {exc}")

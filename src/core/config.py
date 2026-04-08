@@ -1,37 +1,45 @@
 import os
 from dotenv import load_dotenv
 
-# We only upload the .env file here once for the entire project.
+# Load environment variables once.
 load_dotenv()
 
 class Settings:
-    # --- Project Metadatas ---
+    # Project metadata
     PROJECT_NAME = "Swedish Tax Law RAG Assistant"
     PROJECT_VERSION = "1.0.0"
     PROJECT_DESCRIPTION = "RAG engine with encryption for Swedish tax laws."
 
-    # --- Network and Port Settings ---
+    # Network and port settings
     API_PORT = int(os.getenv("API_PORT", 8080))
     API_BASE_URL = os.getenv("API_BASE_URL", f"http://localhost:{API_PORT}/api/v1")
-    
-    # --- Database Settings ---
+
+    # Database settings
     CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
     CHROMA_PORT = int(os.getenv("CHROMA_PORT", 8001))
+    CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "swedish_tax_vectors")
+    CHROMA_DISTANCE = os.getenv("CHROMA_DISTANCE", "cosine")
+
     DYNAMO_ENDPOINT = os.getenv("DYNAMO_ENDPOINT", "http://localhost:8000")
     DYNAMO_REGION = os.getenv("DYNAMO_REGION", "eu-north-1")
+    DYNAMO_TABLE_NAME = os.getenv("DYNAMO_TABLE_NAME", "SwedishTaxDocuments")
+    DYNAMO_ACCESS_KEY_ID = os.getenv("DYNAMO_ACCESS_KEY_ID", "test")
+    DYNAMO_SECRET_ACCESS_KEY = os.getenv("DYNAMO_SECRET_ACCESS_KEY", "test")
 
-    # --- Security ---
+    # Security
     MASTER_ENCRYPTION_KEY = os.getenv("MASTER_ENCRYPTION_KEY")
+    RETURN_CONTEXTS_IN_RESPONSE = os.getenv("RETURN_CONTEXTS_IN_RESPONSE", "false").lower() == "true"
+    ENABLE_INGEST_UI = os.getenv("ENABLE_INGEST_UI", "false").lower() == "true"
 
-    # --- Artificial Intelligence (AI) & RAG Settings ---
+    # AI and RAG settings
     LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "meta-llama/Llama-3.2-1B-Instruct")
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-    CHUNK_SIZE = 400
-    CHUNK_OVERLAP = 50
-    LLM_MAX_NEW_TOKENS = 250
-    LLM_TEMPERATURE = 0.1
+    CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 400))
+    CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 50))
+    LLM_MAX_NEW_TOKENS = int(os.getenv("LLM_MAX_NEW_TOKENS", 250))
+    LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1))
 
-    # --- LLM Main Prompt (Character and Rules) ---
+    # LLM main prompt
     SYSTEM_PROMPT = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 You are an elite Swedish Tax Advisor AI. Your task is to answer the user's question accurately using ONLY the provided context.
 If the answer cannot be found in the context, say "Based on the provided documents, I cannot answer this." Do not hallucinate or use outside knowledge.
@@ -41,5 +49,5 @@ CONTEXT:
 {context}<|eot_id|><|start_header_id|>user<|end_header_id|>
 QUESTION: {query}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
     WARNING_PROMPT = """I am sorry, but I couldn't find any relevant legal documents to answer your question."""
-# We will call this object throughout the entire project.
+
 settings = Settings()

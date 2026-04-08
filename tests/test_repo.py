@@ -1,35 +1,29 @@
-import sys
-import os
+from src.db.document_repo import DocumentRepository
+from src.core.security import EncryptionManager
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.db.document_repo import doc_repo
+class FakeTable:
+    def __init__(self):
+        self.items = {}
 
-def run_test():
-    print("--- DynamoDB CRUD & Encryption Integration Testing ---")
-    
-    # Our Test Data
-    chunk_id = "tax_doc_001_chunk_1"
-    secret_text = "Article 42 of the Skatteverket Law: Corporate tax is set at 20.6%."
-    metadata = {"source": "skatteverket_2026.pdf", "page_number": 12}
-    
-    # 1. The Writing Process
-    print("\n1. The data is encrypted and written to DynamoDB....")
-    doc_repo.save_document_chunk(chunk_id, secret_text, metadata)
-    
-    # 2. Reading Process
-    print("\n2. It is being read from the database and decrypted....")
-    retrieved_item = doc_repo.get_document_chunk(chunk_id)
-    
-    if retrieved_item:
-        print(f"\nThe record found: {retrieved_item}")
-        # Verification Check
-        if retrieved_item['decrypted_text'] == secret_text:
-            print("\n SUCCESSFUL: The end-to-end writing, reading, and decryption chain works flawlessly.!")
-        else:
-            print("\n ERROR: The decoded text does not match the original..")
-    else:
-        print("\n ERROR: No record found.")
+    def put_item(self, Item):
+        self.items[Item["chunk_id"]] = Item
 
-if __name__ == "__main__":
-    run_test()
+    def get_item(self, Key):
+        item = self.items.get(Key["chunk_id"])
+        return {"Item": item} if item else {}
+
+    def delete_item(self, Key):
+        self.items.pop(Key["chunk_id"], None)
+
+
+def test_document_repository_encrypts_and_decrypts():
+    key = "x2FSEjvKQQNsN9adDsIc6vVXwx_W1fVrcp4pfWyU-XU="
+    repo = DocumentRepository(table=FakeTable(), encryption_manager=EncryptionManager(key))
+
+    ok = repo.save_document_chunk("chunk-1", "secret text", {"source": "doc", "chunk_index": 3})
+    assert ok is True
+
+    item = repo.get_document_chunk("chunk-1")
+    assert item["decrypted_text"] == "secret text"
+    assert item["chunk_index"] == 3

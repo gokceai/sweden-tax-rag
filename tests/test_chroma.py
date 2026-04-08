@@ -1,31 +1,56 @@
-import sys
-import os
+from src.core.config import settings
+from src.db.chroma_client import VectorDBManager
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.db.chroma_client import chroma_db
+class FakeCollection:
+    def upsert(self, ids, embeddings, metadatas):
+        return None
 
-def run_test():
-    print("--- ChromaDB Vektör & Semantik Arama Testi ---")
-    
-    chunk_id = "tax_doc_001_chunk_1"
-    # Our document contains Swedish/English terms.
-    secret_text = "Skatteverket (Swedish Tax Agency) defines the corporate tax rate for companies at 20.6% for the year 2026."
-    
-    print("\n1. The text is converted into a mathematical vector and saved (without text) to ChromaDB..")
-    chroma_db.add_vector(chunk_id, secret_text)
-    
-    print("\n2. A Semantic Search Test is being conducted....")
-    # Our question doesn't contain "Skatteverket" or "%20.6". The system needs to figure out the meaning.
-    query = "How much tax do businesses pay in Sweden?"
-    print(f"Soru: '{query}'")
-    
-    found_ids = chroma_db.search_similar_ids(query, n_results=1)
-    
-    if found_ids and chunk_id in found_ids:
-        print(f"\nSUCCESSFUL: Semantic search is working! An ID matching the question was found.: {found_ids[0]}")
-    else:
-        print("\nERROR: Expected ID not found.")
+    def query(self, query_texts, n_results):
+        return {"ids": [["chunk-1"]]}
 
-if __name__ == "__main__":
-    run_test()
+    def delete(self, ids):
+        return None
+
+    def get(self, ids=None, include=None):
+        if ids:
+            return {"ids": ids}
+        return {"ids": ["chunk-1", "chunk-2"]}
+
+
+class FakeClient:
+    def get_or_create_collection(self, name, embedding_function, metadata):
+        return FakeCollection()
+
+
+def test_chroma_manager_uses_settings(monkeypatch):
+    captured = {}
+
+    def fake_http_client(host, port):
+        captured["host"] = host
+        captured["port"] = port
+        return FakeClient()
+
+    class FakeEmbeddingFunction:
+        def __init__(self, model_name):
+            captured["embedding_model"] = model_name
+
+        def __call__(self, texts):
+            return [[0.1, 0.2, 0.3] for _ in texts]
+
+    monkeypatch.setattr("src.db.chroma_client.chromadb.HttpClient", fake_http_client)
+    monkeypatch.setattr(
+        "src.db.chroma_client.embedding_functions.SentenceTransformerEmbeddingFunction",
+        FakeEmbeddingFunction,
+    )
+
+    manager = VectorDBManager()
+
+    assert manager.collection_name == settings.CHROMA_COLLECTION_NAME
+    assert captured["host"] == settings.CHROMA_HOST
+    assert captured["port"] == settings.CHROMA_PORT
+    assert captured["embedding_model"] == settings.EMBEDDING_MODEL
+
+    assert manager.search_similar_ids("vat", 1) == ["chunk-1"]
+    assert manager.has_vector("chunk-1") is True
+    assert manager.list_ids() == {"chunk-1", "chunk-2"}

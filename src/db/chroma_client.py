@@ -1,67 +1,80 @@
 import chromadb
 from chromadb.utils import embedding_functions
 import logging
+from src.core.config import settings
+from src.core.exceptions import InfrastructureError
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class VectorDBManager:
     def __init__(self):
-        # 1.We are connecting to ChromaDB in Docker using HttpClient (we issued an 8001 in docker-compose).
-        self.client = chromadb.HttpClient(host='localhost', port=8001)
-        
-        # 2. Our Embedding Model (Local, fast and closed to the outside)
-        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-        self.collection_name = "swedish_tax_vectors"
+        try:
+            self.client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
+        except Exception as e:
+            raise InfrastructureError(f"ChromaDB connection failed: {e}") from e
+        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=settings.EMBEDDING_MODEL
+        )
+        self.collection_name = settings.CHROMA_COLLECTION_NAME
         self.collection = self._init_collection()
 
     def _init_collection(self):
-        """It creates the collection or links to it if it already exists."""
+        """Create or load the target collection."""
         try:
-            # hnsw:space -> cosine similarity (The heart of semantic searching)
             collection = self.client.get_or_create_collection(
                 name=self.collection_name,
                 embedding_function=self.embedding_fn,
-                metadata={"hnsw:space": "cosine"} 
+                metadata={"hnsw:space": settings.CHROMA_DISTANCE},
             )
-            logger.info(f" ChromaDB Collection '{self.collection_name}' ready.")
+            logger.info("ChromaDB collection '%s' ready.", self.collection_name)
             return collection
         except Exception as e:
-            logger.error(f" ChromaDB Connection Error: {e}")
-            raise e
+            raise InfrastructureError(f"ChromaDB initialization failed: {e}") from e
 
-    def add_vector(self, chunk_id: str, text_for_embedding: str):
-        """
-        We are not intentionally saving the original text ('documents')!
-        We are only saving the calculated vector and its corresponding DynamoDB ID (chunk_id).
-        """
+    def add_or_update_vector(self, chunk_id: str, text_for_embedding: str):
+        """Idempotent write: upsert embedding and metadata without raw text."""
         try:
-            # Convert text to vector (e.g., a 384-dimensional number sequence)
             embeddings = self.embedding_fn([text_for_embedding])
-            
-            self.collection.add(
+            self.collection.upsert(
                 ids=[chunk_id],
                 embeddings=embeddings,
-                metadatas=[{"status": "secured_in_dynamo"}] # Just harmless metadata
+                metadatas=[{"status": "secured_in_dynamo"}],
             )
-            logger.info(f"Vector successfully added.: {chunk_id}")
+            logger.info("Vector upserted: %s", chunk_id)
             return True
         except Exception as e:
-            logger.error(f"Vector insertion error: {e}")
+            logger.error("Vector insertion error for %s: %s", chunk_id, e)
+            return False
+
+    def has_vector(self, chunk_id: str) -> bool:
+        try:
+            result = self.collection.get(ids=[chunk_id], include=[])
+            return bool(result.get("ids"))
+        except Exception as e:
+            logger.error("Vector existence check failed for %s: %s", chunk_id, e)
             return False
 
     def search_similar_ids(self, query_text: str, n_results: int = 2):
-        """It finds the IDs of the vectors that are closest to the user's query."""
+        """Return IDs for vectors closest to the query text."""
         try:
             results = self.collection.query(
                 query_texts=[query_text],
-                n_results=n_results
+                n_results=n_results,
             )
-            # Return the list of found IDs.
-            return results['ids'][0] if results['ids'] else []
+            return results["ids"][0] if results["ids"] else []
         except Exception as e:
-            logger.error(f"Search error: {e}")
+            logger.error("Vector search error: %s", e)
             return []
 
-# instance to be used throughout the project
-chroma_db = VectorDBManager()
+    def delete_vector(self, chunk_id: str) -> None:
+        try:
+            self.collection.delete(ids=[chunk_id])
+        except Exception as e:
+            raise InfrastructureError(f"Chroma delete failed for {chunk_id}: {e}") from e
+
+    def list_ids(self) -> set[str]:
+        try:
+            result = self.collection.get(include=[])
+            return set(result.get("ids", []))
+        except Exception as e:
+            raise InfrastructureError(f"Chroma list IDs failed: {e}") from e

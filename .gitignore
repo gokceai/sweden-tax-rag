@@ -1,3 +1,10 @@
 .env
 .taxtenv
 notes.md
+description.md
+__pycache__/
+*.pyc
+.pytest_cache/
+docker/chroma_data/
+docker/dynamodb_data/
+*.egg-info/

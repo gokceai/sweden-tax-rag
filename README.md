@@ -26,9 +26,9 @@ This repository is not production-ready yet. It already demonstrates the main da
 
 - Infrastructure and model loading are tightly coupled to import-time side effects
 - Several settings are hard-coded in code instead of being fully configuration-driven
-- The `tests/` directory contains manual demo scripts rather than an automated test suite
+- The repository now includes baseline `pytest` unit tests for API, engine, and security layers
 - The ingest pipeline is not transactional across ChromaDB and DynamoDB
-- The API currently returns decrypted context in responses
+- Decrypted contexts can be hidden by default via `RETURN_CONTEXTS_IN_RESPONSE=false`
 
 If you treat this as a prototype or architecture spike, the repository makes sense. If you treat it as a finished service, it still needs another round of engineering.
 
@@ -124,6 +124,7 @@ Create a virtual environment and install dependencies:
 python -m venv .taxtenv
 .taxtenv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install -e .
 ```
 
 ## Start Local Infrastructure
@@ -165,6 +166,7 @@ Main endpoints:
 
 - `POST /api/v1/ingest`
 - `POST /api/v1/retrieve`
+- `GET /api/v1/reconcile`
 
 ## Run The Streamlit UI
 
@@ -195,23 +197,19 @@ curl -X POST http://localhost:8080/api/v1/retrieve `
   -d "{\"query\":\"What tax rate applies to staying in a hotel?\",\"top_k\":2}"
 ```
 
-## Manual Verification Scripts
+## Tests
 
-The `tests/` directory is currently a collection of manual scripts, not a formal test suite.
-
-Examples:
+Run the automated unit tests:
 
 ```powershell
-python tests\test_security.py
-python tests\test_dynamo.py
-python tests\test_chroma.py
-python tests\test_repo.py
-python tests\test_engine.py
-python tests\test_llm.py
-python tests\inspect_dbs.py
+pytest -q
 ```
 
-These scripts are useful for local smoke checks, but they are not isolated, not mock-based, and not suitable as a long-term CI strategy.
+Optional manual DB inspection:
+
+```powershell
+python tests\inspect_dbs.py
+```
 
 ## Configuration Notes
 
@@ -230,6 +228,7 @@ Relevant values in `src/core/config.py`:
 - `CHUNK_OVERLAP`
 - `LLM_MAX_NEW_TOKENS`
 - `LLM_TEMPERATURE`
+- `RETURN_CONTEXTS_IN_RESPONSE`
 
 At the moment, not every module actually respects these settings consistently. Some database connection values are still hard-coded in the client classes.
 
