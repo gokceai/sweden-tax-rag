@@ -107,6 +107,23 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 Then place the output into `MASTER_ENCRYPTION_KEY`.
 
+### Recommended Profiles (Open-Source vs Production)
+
+Use this as a practical baseline when publishing the project publicly (GitHub/Hugging Face):
+
+| Setting | Open-source default (easy first run) | Production/shared deployment (recommended) |
+|---|---|---|
+| `ENFORCE_ADMIN_AUTH` | `false` | `true` |
+| `ADMIN_API_KEY` | empty or placeholder | strong secret from secret manager |
+| `ENABLE_INGEST_UI` | `false` | `false` (enable only for trusted operators) |
+| `RETURN_CONTEXTS_IN_RESPONSE` | `false` | `false` |
+| `RECONCILE_AUTORUN` | `false` | `true` |
+| `RECONCILE_INTERVAL_SECONDS` | `300` | `300` (or lower if stricter monitoring needed) |
+
+Why this split:
+- Open-source users can run the app quickly without extra auth setup.
+- Production operators keep critical data-changing endpoints protected.
+
 ### Important Note About `LLM_MODEL_PATH`
 
 The code expects a model path or model identifier that `transformers` can load with:
