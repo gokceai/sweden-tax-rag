@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from src.api.schemas import IngestRequest, QueryRequest, ReconcileRepairRequest
 from src.core.config import settings
@@ -53,6 +54,39 @@ async def add_request_context(request: Request, call_next):
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _error_category(status_code: int) -> str:
+    if status_code in (401, 403):
+        return "auth_error"
+    if 400 <= status_code < 500:
+        return "client_error"
+    if status_code == 503:
+        return "infrastructure_error"
+    return "server_error"
+
+
+def _error_detail(message: str, *, error_code: str, status_code: int, request: Request) -> dict:
+    return {
+        "message": message,
+        "error_code": error_code,
+        "error_category": _error_category(status_code),
+        "request_id": getattr(request.state, "request_id", None),
+    }
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if isinstance(exc.detail, dict):
+        detail = exc.detail
+    else:
+        detail = _error_detail(
+            str(exc.detail),
+            error_code="http_error",
+            status_code=exc.status_code,
+            request=request,
+        )
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail})
 
 
 def _has_valid_admin_key(request: Request) -> bool:
@@ -132,7 +166,11 @@ def health_check():
 
 
 @app.post("/api/v1/ingest", summary="Upload New Document")
-def ingest_document(request: IngestRequest, _: None = Depends(require_admin_access)):
+def ingest_document(
+    request: IngestRequest,
+    raw_request: Request,
+    _: None = Depends(require_admin_access),
+):
     try:
         rag_engine = get_rag_engine()
         chunks_saved = rag_engine.ingest_document(request.document_text, request.source_name)
@@ -143,10 +181,26 @@ def ingest_document(request: IngestRequest, _: None = Depends(require_admin_acce
         }
     except AppError as e:
         logger.error("Ingest application error: %s", e.message)
-        raise HTTPException(status_code=e.status_code, detail=e.message) from e
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=_error_detail(
+                e.message,
+                error_code="ingest_app_error",
+                status_code=e.status_code,
+                request=raw_request,
+            ),
+        ) from e
     except Exception as e:
         logger.exception("Unhandled ingest error: %s", e)
-        raise HTTPException(status_code=500, detail="Unexpected ingest failure.") from e
+        raise HTTPException(
+            status_code=500,
+            detail=_error_detail(
+                "Unexpected ingest failure.",
+                error_code="ingest_unexpected_error",
+                status_code=500,
+                request=raw_request,
+            ),
+        ) from e
 
 
 @app.post("/api/v1/retrieve", summary="Ask a question and get an AI answer")
@@ -171,14 +225,33 @@ def retrieve_and_generate(request: QueryRequest, raw_request: Request):
         }
     except AppError as e:
         logger.error("Retrieve application error: %s", e.message)
-        raise HTTPException(status_code=e.status_code, detail=e.message) from e
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=_error_detail(
+                e.message,
+                error_code="retrieve_app_error",
+                status_code=e.status_code,
+                request=raw_request,
+            ),
+        ) from e
     except Exception as e:
         logger.exception("Unhandled retrieve error: %s", e)
-        raise HTTPException(status_code=500, detail="Unexpected retrieval failure.") from e
+        raise HTTPException(
+            status_code=500,
+            detail=_error_detail(
+                "Unexpected retrieval failure.",
+                error_code="retrieve_unexpected_error",
+                status_code=500,
+                request=raw_request,
+            ),
+        ) from e
 
 
 @app.get("/api/v1/reconcile", summary="Check Chroma and Dynamo consistency")
-def reconcile_storage(_: None = Depends(require_admin_access)):
+def reconcile_storage(
+    raw_request: Request,
+    _: None = Depends(require_admin_access),
+):
     try:
         rag_engine = get_rag_engine()
         report = rag_engine.reconcile_indexes()
@@ -190,14 +263,32 @@ def reconcile_storage(_: None = Depends(require_admin_access)):
         return report
     except AppError as e:
         logger.error("Reconcile application error: %s", e.message)
-        raise HTTPException(status_code=e.status_code, detail=e.message) from e
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=_error_detail(
+                e.message,
+                error_code="reconcile_app_error",
+                status_code=e.status_code,
+                request=raw_request,
+            ),
+        ) from e
     except Exception as e:
         logger.exception("Unhandled reconcile error: %s", e)
-        raise HTTPException(status_code=500, detail="Unexpected reconcile failure.") from e
+        raise HTTPException(
+            status_code=500,
+            detail=_error_detail(
+                "Unexpected reconcile failure.",
+                error_code="reconcile_unexpected_error",
+                status_code=500,
+                request=raw_request,
+            ),
+        ) from e
 
 
 @app.get("/api/v1/reconcile/last", summary="Get last reconciliation result")
-def get_last_reconcile_result(_: None = Depends(require_admin_access)):
+def get_last_reconcile_result(
+    _: None = Depends(require_admin_access),
+):
     result = getattr(app.state, "last_reconcile_result", None)
     if not result:
         return {
@@ -210,6 +301,7 @@ def get_last_reconcile_result(_: None = Depends(require_admin_access)):
 @app.post("/api/v1/reconcile/repair", summary="Repair Chroma/Dynamo inconsistencies")
 def repair_storage(
     request: ReconcileRepairRequest,
+    raw_request: Request,
     _: None = Depends(require_admin_access),
 ):
     try:
@@ -226,7 +318,23 @@ def repair_storage(
         return repair_report
     except AppError as e:
         logger.error("Repair application error: %s", e.message)
-        raise HTTPException(status_code=e.status_code, detail=e.message) from e
+        raise HTTPException(
+            status_code=e.status_code,
+            detail=_error_detail(
+                e.message,
+                error_code="repair_app_error",
+                status_code=e.status_code,
+                request=raw_request,
+            ),
+        ) from e
     except Exception as e:
         logger.exception("Unhandled repair error: %s", e)
-        raise HTTPException(status_code=500, detail="Unexpected repair failure.") from e
+        raise HTTPException(
+            status_code=500,
+            detail=_error_detail(
+                "Unexpected repair failure.",
+                error_code="repair_unexpected_error",
+                status_code=500,
+                request=raw_request,
+            ),
+        ) from e

@@ -205,6 +205,12 @@ Protected endpoints:
 - `GET /api/v1/reconcile/last`
 - `POST /api/v1/reconcile/repair`
 
+Error response model (for non-2xx responses):
+- `detail.message`: safe human-readable message
+- `detail.error_code`: stable code for programmatic handling
+- `detail.error_category`: one of `auth_error`, `client_error`, `infrastructure_error`, `server_error`
+- `detail.request_id`: request correlation id (matches `X-Request-ID`)
+
 ## Run The Streamlit UI
 
 ```powershell

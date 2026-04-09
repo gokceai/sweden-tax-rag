@@ -121,9 +121,13 @@ def test_admin_auth_requires_key_for_ingest(monkeypatch):
     response = client.post(
         "/api/v1/ingest",
         json={"document_text": "x" * 20, "source_name": "source.txt"},
+        headers={"X-Request-ID": "rid-auth-1"},
     )
 
     assert response.status_code == 401
+    detail = response.json()["detail"]
+    assert detail["error_category"] == "auth_error"
+    assert detail["request_id"] == "rid-auth-1"
 
 
 def test_admin_auth_accepts_valid_key_for_ingest(monkeypatch):
@@ -162,6 +166,28 @@ def test_request_id_header_is_propagated():
 
     assert response.status_code == 200
     assert response.headers.get("X-Request-ID") == "req-123"
+
+
+def test_retrieve_unexpected_error_has_structured_detail(monkeypatch):
+    class BrokenRagEngine:
+        def retrieve_context(self, query, top_k):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: BrokenRagEngine())
+    monkeypatch.setattr("src.api.main.get_answer_generator", lambda: FakeAnswerGenerator())
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/retrieve",
+        json={"query": "vat rate", "top_k": 2},
+        headers={"X-Request-ID": "rid-err-1"},
+    )
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "retrieve_unexpected_error"
+    assert detail["error_category"] == "server_error"
+    assert detail["request_id"] == "rid-err-1"
 
 
 def test_retrieve_redacted_context_mode(monkeypatch):
