@@ -36,6 +36,13 @@ class Settings:
     ENFORCE_ADMIN_AUTH = os.getenv("ENFORCE_ADMIN_AUTH", "false").lower() == "true"
     ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 
+    # Monitoring targets (SLO baselines)
+    SLO_API_P95_LATENCY_MS = int(os.getenv("SLO_API_P95_LATENCY_MS", 2500))
+    SLO_API_5XX_ERROR_RATE_PERCENT = float(os.getenv("SLO_API_5XX_ERROR_RATE_PERCENT", 1.0))
+    SLO_RETRIEVE_SUCCESS_RATE_PERCENT = float(os.getenv("SLO_RETRIEVE_SUCCESS_RATE_PERCENT", 99.0))
+    SLO_RECONCILE_MISMATCH_ALLOWED = int(os.getenv("SLO_RECONCILE_MISMATCH_ALLOWED", 0))
+    SLO_RECONCILE_MAX_STALENESS_MINUTES = int(os.getenv("SLO_RECONCILE_MAX_STALENESS_MINUTES", 1440))
+
     # AI and RAG settings
     LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "meta-llama/Llama-3.2-1B-Instruct")
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")

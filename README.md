@@ -125,6 +125,20 @@ Why this split:
 - Open-source users can run the app quickly without extra auth setup.
 - Production operators keep critical data-changing endpoints protected.
 
+### Monitoring Targets (Phase 3 Step 1)
+
+Define baseline service objectives before adding dashboards/alerts:
+
+| Target | Default | Meaning |
+|---|---|---|
+| `SLO_API_P95_LATENCY_MS` | `2500` | 95% of API requests should finish under 2.5s |
+| `SLO_API_5XX_ERROR_RATE_PERCENT` | `1.0` | 5xx ratio should stay below 1% |
+| `SLO_RETRIEVE_SUCCESS_RATE_PERCENT` | `99.0` | Retrieval pipeline should succeed at least 99% |
+| `SLO_RECONCILE_MISMATCH_ALLOWED` | `0` | Chroma/Dynamo mismatch tolerance after reconcile |
+| `SLO_RECONCILE_MAX_STALENESS_MINUTES` | `1440` | Last reconcile should not be older than 24h |
+
+These values are now configurable via environment variables and can be used in upcoming Prometheus/Grafana alert rules.
+
 ### Important Note About `LLM_MODEL_PATH`
 
 The code expects a model path or model identifier that `transformers` can load with:
