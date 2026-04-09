@@ -1,5 +1,7 @@
 .env
 .taxtenv
+*.md
+!README.md
 notes.md
 description.md
 __pycache__/
