@@ -211,6 +211,9 @@ Error response model (for non-2xx responses):
 - `detail.error_category`: one of `auth_error`, `client_error`, `infrastructure_error`, `server_error`
 - `detail.request_id`: request correlation id (matches `X-Request-ID`)
 
+Operator note:
+- Streamlit UI surfaces these error fields directly, so operators can quickly triage by `error_code` and `request_id`.
+
 ## Run The Streamlit UI
 
 ```powershell
@@ -267,7 +270,10 @@ GitHub Actions (`.github/workflows/ci.yml`) runs these checks on `push` and `pul
 - import smoke for core modules
 - unit test suite (`pytest -q -m "not integration"`)
 
-Integration tests are still available locally:
+Optional integration stage:
+- A separate `integration` job exists in CI and runs on manual trigger (`workflow_dispatch`).
+
+Integration tests are also available locally:
 
 ```powershell
 pytest -q -m integration

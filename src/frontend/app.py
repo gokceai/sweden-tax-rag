@@ -13,6 +13,23 @@ def _admin_headers(admin_key: str) -> dict:
         headers["X-Admin-Key"] = admin_key.strip()
     return headers
 
+
+def _read_error(response: requests.Response) -> str:
+    request_id = response.headers.get("X-Request-ID")
+    try:
+        payload = response.json()
+    except ValueError:
+        return f"HTTP {response.status_code} | request_id={request_id or '-'} | raw={response.text}"
+
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        message = detail.get("message", "Unknown error")
+        error_code = detail.get("error_code", "unknown")
+        category = detail.get("error_category", "unknown")
+        rid = detail.get("request_id", request_id or "-")
+        return f"{message} | code={error_code} | category={category} | request_id={rid}"
+    return f"HTTP {response.status_code} | request_id={request_id or '-'} | detail={detail}"
+
 st.markdown(
     """
     <style>
@@ -175,7 +192,7 @@ with st.sidebar:
                         f"only_in_dynamo={len(report.get('only_in_dynamo', []))}"
                     )
             else:
-                st.error(f"Reconcile failed ({reconcile_resp.status_code})")
+                st.error(_read_error(reconcile_resp))
         except requests.RequestException as exc:
             st.error(f"Reconcile connection error: {exc}")
 
@@ -198,7 +215,7 @@ with st.sidebar:
                 else:
                     st.warning("Repair completed with remaining drift. Check API logs/report.")
             else:
-                st.error(f"Repair failed ({repair_resp.status_code})")
+                st.error(_read_error(repair_resp))
         except requests.RequestException as exc:
             st.error(f"Repair connection error: {exc}")
 
@@ -225,7 +242,7 @@ with st.sidebar:
                         }
                     )
             else:
-                st.error(f"Could not fetch last result ({last_resp.status_code})")
+                st.error(_read_error(last_resp))
         except requests.RequestException as exc:
             st.error(f"Last reconcile connection error: {exc}")
 
@@ -256,7 +273,7 @@ if settings.ENABLE_INGEST_UI:
                         f"{payload.get('chunks_processed', 0)} chunks processed for {payload.get('source', source_name)}."
                     )
                 else:
-                    st.error(f"Ingest failed ({response.status_code}): {response.text}")
+                    st.error(_read_error(response))
             except requests.RequestException as exc:
                 st.error(f"API connection error: {exc}")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -295,6 +312,6 @@ if st.button("Generate Answer"):
                 else:
                     st.caption("Context visibility is disabled by server configuration.")
             else:
-                st.error(f"Retrieve failed ({response.status_code}): {response.text}")
+                st.error(_read_error(response))
         except requests.RequestException as exc:
             st.error(f"API connection error: {exc}")
