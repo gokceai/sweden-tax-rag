@@ -147,10 +147,16 @@ pip install -e .
 
 ## Start Local Infrastructure
 
-Bring up full stack (API + DynamoDB Local + ChromaDB):
+Default stack (API + DynamoDB Local + ChromaDB):
 
 ```powershell
 docker compose up -d
+```
+
+With Streamlit UI container:
+
+```powershell
+docker compose --profile ui up -d
 ```
 
 Expected ports:
@@ -158,10 +164,12 @@ Expected ports:
 - API: `8080`
 - DynamoDB Local: `8000`
 - ChromaDB HTTP API: `8001`
+- Streamlit UI (when `ui` profile enabled): `8501`
 
 Notes:
 - In Docker Compose, API container uses internal service names (`chromadb`, `dynamodb-local`).
 - For local non-container runs, keep `.env` values at localhost defaults.
+- In `ui` profile, frontend container calls API at `http://api:8080/api/v1`.
 
 To stop containers:
 
@@ -381,6 +389,35 @@ curl http://localhost:8080/api/v1/reconcile/last
 ```
 
 If `is_consistent=false` remains after repair, inspect `failed` and `marked_for_review` lists and triage those IDs manually.
+
+## Operational Playbooks
+
+### Setup Playbook
+1. Copy `.env.example` to `.env`.
+2. Set `MASTER_ENCRYPTION_KEY`.
+3. Start stack with `docker compose up -d` (or add `--profile ui`).
+4. Verify health:
+5. `GET http://localhost:8080/`
+6. optional: open `http://localhost:8501` (UI profile).
+
+### Recovery Playbook
+1. Check API health endpoint.
+2. Run reconcile (`GET /api/v1/reconcile` with admin key if enforced).
+3. Run repair (`POST /api/v1/reconcile/repair`) using safe defaults:
+4. `only_in_chroma_action=delete`
+5. `only_in_dynamo_action=rehydrate`
+6. Validate with `GET /api/v1/reconcile/last`.
+7. If failures remain, inspect `failed` IDs and retry targeted repair.
+
+### Release Playbook
+1. Run local checks:
+2. `ruff check . --select E9,F63,F7,F82 --target-version py312`
+3. `pytest -q -m "not integration"`
+4. Ensure CI (`quality-gate`) is green on branch.
+5. Optionally trigger manual integration CI job (`workflow_dispatch`).
+6. Tag release and push:
+7. `git tag vX.Y.Z`
+8. `git push origin main --tags`
 
 ## License
 
