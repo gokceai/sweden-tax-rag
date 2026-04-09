@@ -55,6 +55,28 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _has_valid_admin_key(request: Request) -> bool:
+    if not settings.ADMIN_API_KEY:
+        return False
+    return request.headers.get("X-Admin-Key") == settings.ADMIN_API_KEY
+
+
+def _build_context_payload(contexts: list[str], request: Request):
+    if not settings.RETURN_CONTEXTS_IN_RESPONSE:
+        return None
+
+    mode = settings.CONTEXT_RESPONSE_MODE
+    if mode == "full":
+        if settings.ENFORCE_ADMIN_AUTH and not _has_valid_admin_key(request):
+            return None
+        return contexts
+
+    if mode == "redacted":
+        return [{"index": i + 1, "char_count": len(ctx)} for i, ctx in enumerate(contexts)]
+
+    return None
+
+
 def _run_scheduled_reconcile(stop_event: threading.Event):
     while not stop_event.is_set():
         try:
@@ -128,7 +150,7 @@ def ingest_document(request: IngestRequest, _: None = Depends(require_admin_acce
 
 
 @app.post("/api/v1/retrieve", summary="Ask a question and get an AI answer")
-def retrieve_and_generate(request: QueryRequest):
+def retrieve_and_generate(request: QueryRequest, raw_request: Request):
     try:
         rag_engine = get_rag_engine()
         answer_generator = get_answer_generator()
@@ -138,14 +160,14 @@ def retrieve_and_generate(request: QueryRequest):
             return {
                 "query": request.query,
                 "answer": settings.WARNING_PROMPT,
-                "contexts": [] if settings.RETURN_CONTEXTS_IN_RESPONSE else None,
+                "contexts": _build_context_payload([], raw_request),
             }
 
         ai_answer = answer_generator.generate_answer(request.query, contexts)
         return {
             "query": request.query,
             "answer": ai_answer,
-            "contexts": contexts if settings.RETURN_CONTEXTS_IN_RESPONSE else None,
+            "contexts": _build_context_payload(contexts, raw_request),
         }
     except AppError as e:
         logger.error("Retrieve application error: %s", e.message)

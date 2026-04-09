@@ -162,3 +162,39 @@ def test_request_id_header_is_propagated():
 
     assert response.status_code == 200
     assert response.headers.get("X-Request-ID") == "req-123"
+
+
+def test_retrieve_redacted_context_mode(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.api.main.get_answer_generator", lambda: FakeAnswerGenerator())
+    monkeypatch.setattr("src.core.config.settings.RETURN_CONTEXTS_IN_RESPONSE", True)
+    monkeypatch.setattr("src.core.config.settings.CONTEXT_RESPONSE_MODE", "redacted")
+    client = TestClient(app)
+
+    response = client.post("/api/v1/retrieve", json={"query": "vat rate", "top_k": 2})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["contexts"] == [{"index": 1, "char_count": 9}, {"index": 2, "char_count": 9}]
+
+
+def test_retrieve_full_context_requires_admin_key_when_enforced(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.api.main.get_answer_generator", lambda: FakeAnswerGenerator())
+    monkeypatch.setattr("src.core.config.settings.RETURN_CONTEXTS_IN_RESPONSE", True)
+    monkeypatch.setattr("src.core.config.settings.CONTEXT_RESPONSE_MODE", "full")
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", True)
+    monkeypatch.setattr("src.core.config.settings.ADMIN_API_KEY", "secret-key")
+    client = TestClient(app)
+
+    unauthorized = client.post("/api/v1/retrieve", json={"query": "vat rate", "top_k": 2})
+    authorized = client.post(
+        "/api/v1/retrieve",
+        json={"query": "vat rate", "top_k": 2},
+        headers={"X-Admin-Key": "secret-key"},
+    )
+
+    assert unauthorized.status_code == 200
+    assert unauthorized.json()["contexts"] is None
+    assert authorized.status_code == 200
+    assert authorized.json()["contexts"] == ["context a", "context b"]

@@ -117,6 +117,7 @@ Use this as a practical baseline when publishing the project publicly (GitHub/Hu
 | `ADMIN_API_KEY` | empty or placeholder | strong secret from secret manager |
 | `ENABLE_INGEST_UI` | `false` | `false` (enable only for trusted operators) |
 | `RETURN_CONTEXTS_IN_RESPONSE` | `false` | `false` |
+| `CONTEXT_RESPONSE_MODE` | `none` | `none` or `redacted` |
 | `RECONCILE_AUTORUN` | `false` | `true` |
 | `RECONCILE_INTERVAL_SECONDS` | `300` | `300` (or lower if stricter monitoring needed) |
 
@@ -264,10 +265,16 @@ Relevant values in `src/core/config.py`:
 - `LLM_MAX_NEW_TOKENS`
 - `LLM_TEMPERATURE`
 - `RETURN_CONTEXTS_IN_RESPONSE`
+- `CONTEXT_RESPONSE_MODE`
 - `RECONCILE_AUTORUN`
 - `RECONCILE_INTERVAL_SECONDS`
 - `ENFORCE_ADMIN_AUTH`
 - `ADMIN_API_KEY`
+
+`CONTEXT_RESPONSE_MODE` behaviors:
+- `none`: never include contexts in API responses
+- `redacted`: include metadata only (context index and character count)
+- `full`: include full decrypted contexts (if `ENFORCE_ADMIN_AUTH=true`, valid admin key is required to see full contexts)
 
 At the moment, not every module actually respects these settings consistently. Some database connection values are still hard-coded in the client classes.
 
