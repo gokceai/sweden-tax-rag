@@ -97,6 +97,18 @@ MASTER_ENCRYPTION_KEY=
 LLM_MODEL_PATH=meta-llama/Llama-3.2-1B-Instruct
 ```
 
+If you run API in Docker and want to use a local host model directory, also set:
+
+```env
+LLM_MODEL_HOST_PATH=D:/AI_Projects/_models
+LLM_MODEL_CONTAINER_ROOT=/models
+LLM_MODEL_PATH_IN_CONTAINER=/models/Llama-3.2-1B-Instruct
+```
+
+Why this is needed:
+- host paths like `D:\...` are not valid inside Linux containers
+- container must read model from a mounted in-container path (for example `/models/...`)
+
 ### Generate A Fernet Key
 
 Use this command to generate a valid key:
@@ -176,13 +188,13 @@ docker compose --profile ui up -d
 With monitoring stack (Prometheus + Grafana + Alertmanager):
 
 ```powershell
-docker compose --profile monitoring up -d
+docker compose --profile monitoring up -d --no-build
 ```
 
 With GPU monitoring exporter enabled:
 
 ```powershell
-docker compose --profile monitoring --profile gpu-monitoring up -d
+docker compose --profile monitoring --profile gpu-monitoring up -d --no-build
 ```
 
 Expected ports:
@@ -200,6 +212,8 @@ Notes:
 - In Docker Compose, API container uses internal service names (`chromadb`, `dynamodb-local`).
 - For local non-container runs, keep `.env` values at localhost defaults.
 - In `ui` profile, frontend container calls API at `http://api:8080/api/v1`.
+- API container mounts `${LLM_MODEL_HOST_PATH}` to `${LLM_MODEL_CONTAINER_ROOT}` (read-only).
+- To avoid CPU/RAM spikes on Docker Desktop, keep `gpu-monitoring` profile off unless needed and use resource limits from `.env` (`API_MEM_LIMIT`, `API_CPUS_LIMIT`, etc.).
 
 To stop containers:
 

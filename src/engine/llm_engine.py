@@ -11,6 +11,7 @@ class AnswerGenerator:
         self.settings = settings
         self.model_path = settings.LLM_MODEL_PATH
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
         self.tokenizer = None
         self.model = None
 
@@ -18,12 +19,17 @@ class AnswerGenerator:
         if self.model is not None and self.tokenizer is not None:
             return
 
-        logger.info("Loading LLM model '%s' on %s", self.model_path, self.device.upper())
+        logger.info(
+            "Loading LLM model '%s' on %s (dtype=%s)",
+            self.model_path,
+            self.device.upper(),
+            str(self.dtype),
+        )
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
-                torch_dtype=torch.bfloat16,
+                dtype=self.dtype,
                 low_cpu_mem_usage=True,
                 device_map="auto" if self.device == "cuda" else None,
             )

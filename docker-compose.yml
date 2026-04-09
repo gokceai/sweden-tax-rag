@@ -13,6 +13,12 @@ services:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
       - DYNAMO_ENDPOINT=http://dynamodb-local:8000
+      - LLM_MODEL_PATH=${LLM_MODEL_PATH_IN_CONTAINER:-${LLM_MODEL_PATH}}
+    volumes:
+      - ${LLM_MODEL_HOST_PATH:-./docker/llm_models}:${LLM_MODEL_CONTAINER_ROOT:-/models}:ro
+    gpus: all
+    cpus: ${API_CPUS_LIMIT:-4.0}
+    mem_limit: ${API_MEM_LIMIT:-6g}
     depends_on:
       - dynamodb-local
       - chromadb
@@ -77,6 +83,8 @@ services:
       - --web.enable-lifecycle
     ports:
       - "9090:9090"
+    cpus: ${PROMETHEUS_CPUS_LIMIT:-1.0}
+    mem_limit: ${PROMETHEUS_MEM_LIMIT:-768m}
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -94,6 +102,8 @@ services:
       - --config.file=/etc/alertmanager/alertmanager.yml
     ports:
       - "9093:9093"
+    cpus: ${ALERTMANAGER_CPUS_LIMIT:-0.5}
+    mem_limit: ${ALERTMANAGER_MEM_LIMIT:-256m}
     volumes:
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     profiles:
@@ -105,6 +115,8 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    cpus: ${GRAFANA_CPUS_LIMIT:-1.0}
+    mem_limit: ${GRAFANA_MEM_LIMIT:-768m}
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -128,5 +140,4 @@ services:
     cap_add:
       - SYS_ADMIN
     profiles:
-      - monitoring
       - gpu-monitoring
