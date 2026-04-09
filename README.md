@@ -94,7 +94,7 @@ Create your local environment file from `.env.example` and fill in the values:
 
 ```env
 MASTER_ENCRYPTION_KEY=
-LLM_MODEL_PATH=D:\AI_Projects\_models\Llama-3.2-1B-Instruct
+LLM_MODEL_PATH=meta-llama/Llama-3.2-1B-Instruct
 ```
 
 ### Generate A Fernet Key
