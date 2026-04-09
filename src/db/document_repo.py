@@ -20,6 +20,14 @@ class DocumentRepository:
                 "source": metadata.get("source", "unknown"),
                 "chunk_index": metadata.get("chunk_index", 0),
             }
+            for key, value in metadata.items():
+                if key in {"chunk_id", "encrypted_text", "decrypted_text", "text"}:
+                    continue
+                if key in item:
+                    continue
+                if value is None:
+                    continue
+                item[key] = value
             self.table.put_item(Item=item)
             logger.info("Chunk '%s' encrypted and saved.", chunk_id)
             return True

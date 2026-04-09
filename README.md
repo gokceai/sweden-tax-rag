@@ -271,6 +271,27 @@ Optional manual DB inspection:
 python tests\inspect_dbs.py
 ```
 
+## Dataset Ingest Pipeline
+
+Production-oriented ingest utilities are available under:
+- `src/pipelines/vector_ingest/`
+
+Modules:
+- `dataset_validator.py`: validates JSONL schema and chunk quality
+- `dataset_normalizer.py`: applies text normalization and updates hash/counters
+- `ingest_precheck.py`: dry-run collision report against current Dynamo/Chroma state
+- `chunk_ingest_runner.py`: idempotent write flow (Dynamo encrypted text + Chroma vectors)
+- `pipeline_cli.py`: orchestrates validate -> normalize -> precheck -> ingest
+
+Example full run:
+
+```powershell
+python src/pipelines/vector_ingest/pipeline_cli.py `
+  --input example-dataset/chunks.jsonl `
+  --apply `
+  --reset-chroma-collection
+```
+
 ## CI Quality Gate
 
 GitHub Actions (`.github/workflows/ci.yml`) runs these checks on `push` and `pull_request`:

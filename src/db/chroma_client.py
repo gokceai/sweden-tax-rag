@@ -31,14 +31,23 @@ class VectorDBManager:
         except Exception as e:
             raise InfrastructureError(f"ChromaDB initialization failed: {e}") from e
 
-    def add_or_update_vector(self, chunk_id: str, text_for_embedding: str):
+    def add_or_update_vector(self, chunk_id: str, text_for_embedding: str, metadata: dict | None = None):
         """Idempotent write: upsert embedding and metadata without raw text."""
         try:
             embeddings = self.embedding_fn([text_for_embedding])
+            vector_metadata = {"status": "secured_in_dynamo"}
+            if metadata:
+                for key, value in metadata.items():
+                    if key in {"text", "encrypted_text", "decrypted_text"}:
+                        continue
+                    if value is None:
+                        continue
+                    if isinstance(value, (str, int, float, bool)):
+                        vector_metadata[key] = value
             self.collection.upsert(
                 ids=[chunk_id],
                 embeddings=embeddings,
-                metadatas=[{"status": "secured_in_dynamo"}],
+                metadatas=[vector_metadata],
             )
             logger.info("Vector upserted: %s", chunk_id)
             return True
