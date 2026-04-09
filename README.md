@@ -247,6 +247,19 @@ Optional manual DB inspection:
 python tests\inspect_dbs.py
 ```
 
+## CI Quality Gate
+
+GitHub Actions (`.github/workflows/ci.yml`) runs these checks on `push` and `pull_request`:
+- lint sanity gate (`ruff`, selected critical rules: syntax/undefined-name class errors)
+- import smoke for core modules
+- unit test suite (`pytest -q -m "not integration"`)
+
+Integration tests are still available locally:
+
+```powershell
+pytest -q -m integration
+```
+
 ## Configuration Notes
 
 Relevant values in `src/core/config.py`:
