@@ -1,0 +1,37 @@
+﻿Sweden Tax RAG Incident Runbook: Chroma/Dynamo Drift
+
+1) Detect drift
+- GET /api/v1/reconcile (admin key if enforced)
+- Review only_in_chroma and only_in_dynamo arrays
+
+2) Choose safe repair strategy
+- only_in_chroma_action:
+  - delete (recommended)
+  - mark_for_review
+- only_in_dynamo_action:
+  - rehydrate (recommended)
+  - delete
+  - mark_for_review
+
+3) Execute repair
+- POST /api/v1/reconcile/repair
+- Body example:
+  {
+    "only_in_chroma_action": "delete",
+    "only_in_dynamo_action": "rehydrate"
+  }
+
+4) Validate post-state
+- GET /api/v1/reconcile/last
+- is_consistent should be true
+- only_in_chroma and only_in_dynamo should be empty
+
+5) Watch metrics
+- rag_reconcile_only_in_chroma
+- rag_reconcile_only_in_dynamo
+- rag_reconcile_is_consistent
+
+6) Prevent recurrence
+- Keep idempotent ingest path only
+- Avoid ad-hoc manual writes in one store
+- Run scheduled reconcile (RECONCILE_AUTORUN=true) when appropriate

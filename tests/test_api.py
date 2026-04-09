@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from src.api.main import app
@@ -48,6 +49,14 @@ class FakeRagEngine:
 class FakeAnswerGenerator:
     def generate_answer(self, query, contexts):
         return "grounded answer"
+
+
+@pytest.fixture(autouse=True)
+def reset_runtime_flags(monkeypatch):
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", False)
+    monkeypatch.setattr("src.core.config.settings.ADMIN_API_KEY", "")
+    monkeypatch.setattr("src.core.config.settings.RETURN_CONTEXTS_IN_RESPONSE", False)
+    monkeypatch.setattr("src.core.config.settings.CONTEXT_RESPONSE_MODE", "none")
 
 
 def test_ingest_endpoint(monkeypatch):
@@ -166,6 +175,65 @@ def test_request_id_header_is_propagated():
 
     assert response.status_code == 200
     assert response.headers.get("X-Request-ID") == "req-123"
+
+
+def test_metrics_endpoint_available():
+    client = TestClient(app)
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert "http_requests_total" in response.text
+
+
+def test_health_live_endpoint():
+    client = TestClient(app)
+
+    response = client.get("/health/live")
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "live"
+
+
+def test_health_ready_endpoint(monkeypatch):
+    class FakeVector:
+        collection_name = "ok"
+
+    class FakeDynamo:
+        def create_table_if_not_exists(self):
+            return object()
+
+    monkeypatch.setattr("src.api.main.get_vector_db_manager", lambda: FakeVector())
+    monkeypatch.setattr("src.api.main.get_dynamo_manager", lambda: FakeDynamo())
+    client = TestClient(app)
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+
+def test_health_deep_endpoint(monkeypatch):
+    class FakeVector:
+        def search_similar_ids(self, query_text, n_results=1):
+            return []
+
+    class FakeTable:
+        def scan(self, Limit=1):
+            return {"Items": []}
+
+    class FakeDynamo:
+        def create_table_if_not_exists(self):
+            return FakeTable()
+
+    monkeypatch.setattr("src.api.main.get_vector_db_manager", lambda: FakeVector())
+    monkeypatch.setattr("src.api.main.get_dynamo_manager", lambda: FakeDynamo())
+    client = TestClient(app)
+
+    response = client.get("/health/deep")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
 
 
 def test_retrieve_unexpected_error_has_structured_detail(monkeypatch):

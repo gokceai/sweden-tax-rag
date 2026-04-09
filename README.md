@@ -173,12 +173,28 @@ With Streamlit UI container:
 docker compose --profile ui up -d
 ```
 
+With monitoring stack (Prometheus + Grafana + Alertmanager):
+
+```powershell
+docker compose --profile monitoring up -d
+```
+
+With GPU monitoring exporter enabled:
+
+```powershell
+docker compose --profile monitoring --profile gpu-monitoring up -d
+```
+
 Expected ports:
 
 - API: `8080`
 - DynamoDB Local: `8000`
 - ChromaDB HTTP API: `8001`
 - Streamlit UI (when `ui` profile enabled): `8501`
+- Prometheus (when `monitoring` profile enabled): `9090`
+- Alertmanager (when `monitoring` profile enabled): `9093`
+- Grafana (when `monitoring` profile enabled): `3000` (`admin` / `admin` by default)
+- DCGM exporter (when `gpu-monitoring` profile enabled): `9400`
 
 Notes:
 - In Docker Compose, API container uses internal service names (`chromadb`, `dynamodb-local`).
@@ -208,14 +224,39 @@ uvicorn src.api.main:app --reload --port 8080
 Health endpoint:
 
 - `GET /`
+- `GET /health/live`
+- `GET /health/ready`
+- `GET /health/deep`
 
 Main endpoints:
 
 - `POST /api/v1/ingest`
 - `POST /api/v1/retrieve`
+- `GET /metrics`
 - `GET /api/v1/reconcile`
 - `GET /api/v1/reconcile/last`
 - `POST /api/v1/reconcile/repair`
+
+`/metrics` now exports both generic HTTP metrics and RAG-flow metrics, including:
+- `http_requests_total`, `http_request_duration_seconds`
+- `rag_retrieve_requests_total`, `rag_retrieve_duration_seconds`
+- `rag_ingest_requests_total`, `rag_ingest_chunks_total`, `rag_ingest_duration_seconds`
+- `rag_reconcile_runs_total`, `rag_reconcile_only_in_chroma`, `rag_reconcile_only_in_dynamo`, `rag_reconcile_is_consistent`
+- `rag_repair_requests_total`, `rag_repair_duration_seconds`
+
+GPU metrics are scraped from `dcgm-exporter` when enabled (examples):
+- `DCGM_FI_DEV_GPU_UTIL`
+- `DCGM_FI_DEV_FB_USED`
+- `DCGM_FI_DEV_GPU_TEMP`
+- `DCGM_FI_DEV_POWER_USAGE`
+
+## Monitoring Runbooks
+
+Operational runbooks are available under `monitoring/runbooks/`:
+
+- `retrieve_incident_runbook.txt`
+- `reconcile_repair_runbook.txt`
+- `gpu_fallback_runbook.txt`
 
 When `ENFORCE_ADMIN_AUTH=true`, admin endpoints require header:
 

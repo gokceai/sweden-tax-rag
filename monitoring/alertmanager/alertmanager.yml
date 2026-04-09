@@ -1,0 +1,5 @@
+﻿route:
+  receiver: log-only
+
+receivers:
+  - name: log-only
