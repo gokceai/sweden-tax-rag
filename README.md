@@ -147,7 +147,7 @@ pip install -e .
 
 ## Start Local Infrastructure
 
-Bring up DynamoDB Local and ChromaDB:
+Bring up full stack (API + DynamoDB Local + ChromaDB):
 
 ```powershell
 docker compose up -d
@@ -155,8 +155,13 @@ docker compose up -d
 
 Expected ports:
 
+- API: `8080`
 - DynamoDB Local: `8000`
 - ChromaDB HTTP API: `8001`
+
+Notes:
+- In Docker Compose, API container uses internal service names (`chromadb`, `dynamodb-local`).
+- For local non-container runs, keep `.env` values at localhost defaults.
 
 To stop containers:
 
@@ -171,6 +176,8 @@ docker compose down -v
 ```
 
 ## Run The API
+
+Local non-container run:
 
 ```powershell
 uvicorn src.api.main:app --reload --port 8080

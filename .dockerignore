@@ -1,0 +1,13 @@
+.git
+.gitignore
+.taxtenv
+__pycache__/
+*.pyc
+.pytest_cache/
+docker/chroma_data/
+docker/dynamodb_data/
+notes.md
+description.md
+phases_progress.md
+ADVICE.md
+agent.md
