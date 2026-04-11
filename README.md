@@ -1,514 +1,312 @@
 # Sweden Tax RAG Service
 
-An early-stage prototype of a secure Retrieval-Augmented Generation (RAG) service for Swedish tax content.
+A security-first Retrieval-Augmented Generation prototype for Swedish tax law.
 
-The project combines:
+![status](https://img.shields.io/badge/status-prototype-orange)
+![python](https://img.shields.io/badge/python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-async-009688)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-vector-4B0082)
+![DynamoDB](https://img.shields.io/badge/DynamoDB--Local-encrypted-232F3E)
+![Prometheus](https://img.shields.io/badge/Prometheus-observability-E6522C)
+![license](https://img.shields.io/badge/license-TBD-lightgrey)
 
-- FastAPI for the API
-- Gradio for a simple operator UI
-- ChromaDB for semantic search
-- DynamoDB Local for encrypted chunk storage
-- `cryptography.Fernet` for encryption at rest
-- Sentence Transformers for embeddings
-- A local Llama-compatible model for answer generation
+---
 
-The intended design is straightforward:
+## Why this exists
 
-- ChromaDB stores vectors and chunk IDs only
-- DynamoDB stores the encrypted original text
-- The application retrieves matching chunk IDs from ChromaDB
-- The application decrypts the related text from DynamoDB
-- The LLM answers using only the retrieved context
+Most open-source RAG demos store the raw document text as metadata on the vector, which is pragmatic but leaks content to anyone who can read the collection. This project takes the opposite stance:
 
-## Current Status
+> **The vector store holds vectors. The encrypted store holds the text. Nothing else.**
 
-This repository is not production-ready yet. It already demonstrates the main data flow, but it still has important gaps:
+It is a deliberate split-storage architecture with a reconciliation plane on top — a prototype for teams that want to understand what a "secure-ish" RAG layer actually looks like in code, not just on an architecture slide.
 
-- Infrastructure and model loading are tightly coupled to import-time side effects
-- Several settings are hard-coded in code instead of being fully configuration-driven
-- The repository now includes baseline `pytest` unit tests for API, engine, and security layers
-- The ingest pipeline is not transactional across ChromaDB and DynamoDB
-- Decrypted contexts can be hidden by default via `RETURN_CONTEXTS_IN_RESPONSE=false`
+## What's in the box
 
-If you treat this as a prototype or architecture spike, the repository makes sense. If you treat it as a finished service, it still needs another round of engineering.
+- **Split storage with field-level encryption.** ChromaDB stores `chunk_id` + embedding; DynamoDB Local stores `chunk_id` + Fernet-encrypted text. Decryption happens in application memory, right before generation.
+- **Idempotent ingest.** Deterministic chunk IDs (`{source}_chunk_{i}_{sha256[:16]}`) make re-ingesting the same content a no-op instead of a duplicate.
+- **Cross-store reconciliation.** Dedicated `/reconcile` and `/reconcile/repair` endpoints detect and heal drift between the two stores (`delete`, `rehydrate`, `mark_for_review`) — plus an optional background worker.
+- **Pluggable admin auth + context redaction policy.** `ENFORCE_ADMIN_AUTH` gates sensitive endpoints via `X-Admin-Key`; `CONTEXT_RESPONSE_MODE` controls whether decrypted context leaks back over the wire (`none` / `redacted` / `full`).
+- **Three-tier health checks** (`/health/live`, `/health/ready`, `/health/deep`) and a structured error envelope with `request_id` correlation.
+- **Full Prometheus + Grafana + Alertmanager stack** with RAG-specific metrics (ingest/retrieve/reconcile/repair), SLO baselines, alert rules, and operator runbooks.
+- **Thin Gradio UI** scoped to retrieval — admin surface deliberately kept off the browser.
+- **CI quality gate** (lint, import smoke, unit tests, Prometheus config validation) + optional integration job against real Chroma/Dynamo containers.
 
-## Architecture Overview
+## Architecture at a glance
 
-### Data Flow
-
-1. A client submits a document to `/api/v1/ingest`.
-2. The RAG engine splits the document into chunks with `RecursiveCharacterTextSplitter`.
-3. Each chunk is embedded with `all-MiniLM-L6-v2`.
-4. The vector is stored in ChromaDB together with the generated `chunk_id`.
-5. The original chunk text is encrypted with Fernet and stored in DynamoDB Local.
-6. A user submits a question to `/api/v1/retrieve`.
-7. The system searches ChromaDB for similar chunk IDs.
-8. The matching encrypted chunks are fetched from DynamoDB and decrypted.
-9. The combined context is inserted into the system prompt and sent to the LLM.
-10. The generated answer is returned to the client.
-
-### Main Components
-
-- `src/api/main.py`: FastAPI routes for ingest and retrieval
-- `src/api/schemas.py`: Request models
-- `src/core/config.py`: Shared settings and prompts
-- `src/core/security.py`: Fernet encryption manager
-- `src/db/chroma_client.py`: ChromaDB access and vector operations
-- `src/db/dynamo_client.py`: DynamoDB Local access and table bootstrap
-- `src/db/document_repo.py`: Encrypted chunk persistence
-- `src/engine/rag_core.py`: Chunking, ingest, and retrieval logic
-- `src/engine/llm_engine.py`: Local LLM loading and text generation
-- `src/frontend/app.py`: Gradio user interface
-
-## Repository Layout
-
-```text
-.
-|-- docker/
-|-- notebooks/
-|-- src/
-|   |-- api/
-|   |-- core/
-|   |-- db/
-|   |-- engine/
-|   `-- frontend/
-|-- tests/
-|-- .env.example
-|-- docker-compose.yml
-|-- requirements.txt
-|-- agent.md
-|-- ADVICE.md
-`-- README.md
+```
+               ┌──────────────┐
+               │   Client     │
+               └──────┬───────┘
+                      │
+                      ▼
+               ┌──────────────┐       ┌───────────────┐
+               │  FastAPI     │──────▶│  Prometheus   │
+               │  (main.py)   │       │  Grafana      │
+               └──────┬───────┘       │  Alertmanager │
+                      │               └───────────────┘
+        ┌─────────────┴──────────────┐
+        ▼                            ▼
+ ┌────────────┐               ┌────────────────┐
+ │  RAGEngine │               │ AnswerGenerator│
+ │ rag_core.py│               │  llm_engine.py │
+ └─────┬──────┘               └────────┬───────┘
+       │                               │
+ ┌─────┴──────┐                 ┌──────┴────────┐
+ ▼            ▼                 ▼               ▼
+ChromaDB   DynamoDB          Transformers    Local Llama
+(vectors) (encrypted text)   + Torch (GPU)    weights
 ```
 
-## Prerequisites
+**Data flow on retrieval:** question → embed → Chroma search returns top-k `chunk_id`s → Dynamo lookup → Fernet decrypt in memory → LLM generates an answer grounded strictly in the decrypted context → response (context is redacted/hidden per policy).
 
-- Python 3.12 recommended
-- Docker Desktop or another Docker runtime
-- A valid Fernet key for `MASTER_ENCRYPTION_KEY`
-- A local or downloadable Llama-compatible model
+## Tech stack (what's actually wired up)
 
-## Environment Configuration
+| Layer | Choice |
+|---|---|
+| API | FastAPI |
+| UI | **Gradio** (retrieval-only) |
+| Vector store | ChromaDB (HTTP client) |
+| Encrypted text store | DynamoDB Local |
+| Encryption | `cryptography.Fernet` (AES-128-CBC + HMAC-SHA256) |
+| Embeddings | `sentence-transformers / all-MiniLM-L6-v2` (384-dim) |
+| Chunking | `langchain_text_splitters.RecursiveCharacterTextSplitter` |
+| LLM runtime | Hugging Face Transformers + Torch, local Llama-compatible weights |
+| Observability | Prometheus, Grafana, Alertmanager, optional NVIDIA DCGM exporter |
+| CI | GitHub Actions (`ruff`, `pytest`, `promtool`) |
 
-Create your local environment file from `.env.example` and fill in the values:
+> Heads up: `requirements.txt` is UTF-16 LE encoded. Keep that encoding when editing or CI and Docker build will both fail loudly.
 
-```env
-MASTER_ENCRYPTION_KEY=
-LLM_MODEL_PATH=meta-llama/Llama-3.2-1B-Instruct
-```
+## Quick start (Docker)
 
-If you run API in Docker and want to use a local host model directory, also set:
-
-```env
-LLM_MODEL_HOST_PATH=D:/AI_Projects/_models
-LLM_MODEL_CONTAINER_ROOT=/models
-LLM_MODEL_PATH_IN_CONTAINER=/models/Llama-3.2-1B-Instruct
-```
-
-Why this is needed:
-- host paths like `D:\...` are not valid inside Linux containers
-- container must read model from a mounted in-container path (for example `/models/...`)
-
-### Generate A Fernet Key
-
-Use this command to generate a valid key:
-
-```powershell
+```bash
+cp .env.example .env
+# Generate a Fernet key and paste it into MASTER_ENCRYPTION_KEY
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+docker compose up -d                              # api + chromadb + dynamodb-local
+docker compose --profile ui up -d                 # + Gradio
+docker compose --profile monitoring up -d --no-build  # + Prometheus/Grafana/Alertmanager
 ```
 
-Then place the output into `MASTER_ENCRYPTION_KEY`.
+Ports:
 
-### Recommended Profiles (Open-Source vs Production)
+| Service | Port |
+|---|---|
+| FastAPI | `8080` |
+| DynamoDB Local | `8000` |
+| ChromaDB | `8001` |
+| Gradio UI | `8501` |
+| Prometheus | `9090` |
+| Alertmanager | `9093` |
+| Grafana | `3000` (`admin` / `admin`) |
+| DCGM exporter (gpu-monitoring profile) | `9400` |
 
-Use this as a practical baseline when publishing the project publicly (GitHub/Hugging Face):
+Stop the stack with `docker compose down` (or `docker compose down -v` to wipe local volumes).
 
-| Setting | Open-source default (easy first run) | Production/shared deployment (recommended) |
+> **GPU assumption.** The `api` service currently pins `gpus: all` in `docker-compose.yml`. If you don't have NVIDIA runtime/CDI set up, the container won't start. Verify with:
+> ```bash
+> docker info | grep -Ei 'runtimes|default runtime|nvidia|cdi'
+> docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi
+> ```
+> Making GPU optional via an override compose file is tracked in [TASKS.md](TASKS.md).
+
+## Quick start (local, no Docker)
+
+```bash
+python -m venv .venv
+source .venv/bin/activate                    # Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -e .
+
+uvicorn src.api.main:app --reload --port 8080
+python src/frontend/app.py                   # Gradio on :8501
+```
+
+With no container, keep `.env` values at their `localhost` defaults — `docker-compose.yml` overrides service hostnames only inside containers.
+
+## Configuration that actually matters
+
+Full list lives in [src/core/config.py](src/core/config.py). The critical ones:
+
+| Variable | Purpose |
+|---|---|
+| `MASTER_ENCRYPTION_KEY` | **Required.** Valid Fernet key. Missing → app refuses to start. |
+| `LLM_MODEL_PATH` | Path or HF repo ID loadable by `AutoModelForCausalLM`. |
+| `LLM_MODEL_HOST_PATH` / `LLM_MODEL_CONTAINER_ROOT` / `LLM_MODEL_PATH_IN_CONTAINER` | Host ↔ container model path mapping for Docker. |
+| `ENFORCE_ADMIN_AUTH` / `ADMIN_API_KEY` | Gate ingest/reconcile/repair endpoints with `X-Admin-Key`. |
+| `RETURN_CONTEXTS_IN_RESPONSE` / `CONTEXT_RESPONSE_MODE` | Context exposure policy: `none`, `redacted` (index + char count), or `full` (admin-gated). |
+| `RECONCILE_AUTORUN` / `RECONCILE_INTERVAL_SECONDS` | Background reconciliation worker. |
+| `SLO_*` | Latency / error / reconcile staleness targets for alerts. |
+
+### Deployment profiles
+
+| Setting | Local open-source default | Shared / production |
 |---|---|---|
 | `ENFORCE_ADMIN_AUTH` | `false` | `true` |
-| `ADMIN_API_KEY` | empty or placeholder | strong secret from secret manager |
-| `ENABLE_INGEST_UI` | `false` | `false` (enable only for trusted operators) |
+| `ADMIN_API_KEY` | empty / placeholder | strong value from a secret manager |
 | `RETURN_CONTEXTS_IN_RESPONSE` | `false` | `false` |
 | `CONTEXT_RESPONSE_MODE` | `none` | `none` or `redacted` |
 | `RECONCILE_AUTORUN` | `false` | `true` |
-| `RECONCILE_INTERVAL_SECONDS` | `300` | `300` (or lower if stricter monitoring needed) |
 
-Why this split:
-- Open-source users can run the app quickly without extra auth setup.
-- Production operators keep critical data-changing endpoints protected.
+## API surface
 
-### Monitoring Targets (Phase 3 Step 1)
+### Health
 
-Define baseline service objectives before adding dashboards/alerts:
+| Endpoint | Purpose |
+|---|---|
+| `GET /` | Liveness ping + service metadata |
+| `GET /health/live` | Process alive |
+| `GET /health/ready` | Chroma + Dynamo reachable (503 otherwise) |
+| `GET /health/deep` | Real query + scan probe (more expensive) |
+| `GET /metrics` | Prometheus format |
 
-| Target | Default | Meaning |
-|---|---|---|
-| `SLO_API_P95_LATENCY_MS` | `2500` | 95% of API requests should finish under 2.5s |
-| `SLO_API_5XX_ERROR_RATE_PERCENT` | `1.0` | 5xx ratio should stay below 1% |
-| `SLO_RETRIEVE_SUCCESS_RATE_PERCENT` | `99.0` | Retrieval pipeline should succeed at least 99% |
-| `SLO_RECONCILE_MISMATCH_ALLOWED` | `0` | Chroma/Dynamo mismatch tolerance after reconcile |
-| `SLO_RECONCILE_MAX_STALENESS_MINUTES` | `1440` | Last reconcile should not be older than 24h |
+### Main flow
 
-These values are now configurable via environment variables and can be used in upcoming Prometheus/Grafana alert rules.
+| Endpoint | Admin-gated? |
+|---|---|
+| `POST /api/v1/ingest` | yes |
+| `POST /api/v1/retrieve` | no (public) |
+| `GET /api/v1/reconcile` | yes |
+| `GET /api/v1/reconcile/last` | yes |
+| `POST /api/v1/reconcile/repair` | yes |
 
-### Important Note About `LLM_MODEL_PATH`
+### Error envelope
 
-The code expects a model path or model identifier that `transformers` can load with:
+Every non-2xx response follows a stable shape so clients can triage programmatically:
 
-- `AutoTokenizer.from_pretrained(...)`
-- `AutoModelForCausalLM.from_pretrained(...)`
-
-If the model is not available locally, the first load may require a download depending on your environment.
-
-## Installation
-
-Create a virtual environment and install dependencies:
-
-```powershell
-python -m venv .taxtenv
-.taxtenv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install -e .
+```json
+{
+  "detail": {
+    "message": "Unexpected retrieval failure.",
+    "error_code": "retrieve_unexpected_error",
+    "error_category": "server_error",
+    "request_id": "f4a9…"
+  }
+}
 ```
 
-## Start Local Infrastructure
+`X-Request-ID` is generated by middleware (or echoed if provided), attached to every response, and emitted into structured JSON logs.
 
-Default stack (API + DynamoDB Local + ChromaDB):
+## API examples
 
-```powershell
-docker compose up -d
+Ingest a document:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"document_text":"VAT on hotel stays in Sweden may use a reduced rate of 12 percent.","source_name":"hotel_vat_notes.txt"}'
 ```
 
-With Gradio UI container:
+Ask a question:
 
-```powershell
-docker compose --profile ui up -d
+```bash
+curl -X POST http://localhost:8080/api/v1/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What tax rate applies to staying in a hotel?","top_k":2}'
 ```
 
-With monitoring stack (Prometheus + Grafana + Alertmanager):
+Reconcile drift:
 
-```powershell
-docker compose --profile monitoring up -d --no-build
+```bash
+curl http://localhost:8080/api/v1/reconcile
+curl -X POST http://localhost:8080/api/v1/reconcile/repair \
+  -H "Content-Type: application/json" \
+  -d '{"only_in_chroma_action":"delete","only_in_dynamo_action":"rehydrate"}'
 ```
 
-With GPU monitoring exporter enabled:
+## Dataset ingest pipeline
 
-```powershell
-docker compose --profile monitoring --profile gpu-monitoring up -d --no-build
+For pre-chunked JSONL corpora there is a dedicated pipeline under [src/pipelines/vector_ingest/](src/pipelines/vector_ingest/):
+
+```
+pipeline_cli.py  →  dataset_validator.py
+                 →  dataset_normalizer.py  (Unicode NFC + whitespace + hash refresh)
+                 →  ingest_precheck.py     (dry-run collision report vs. current stores)
+                 →  chunk_ingest_runner.py (idempotent Dynamo + Chroma write)
 ```
 
-Expected ports:
-
-- API: `8080`
-- DynamoDB Local: `8000`
-- ChromaDB HTTP API: `8001`
-- Gradio UI (when `ui` profile enabled): `8501`
-- Prometheus (when `monitoring` profile enabled): `9090`
-- Alertmanager (when `monitoring` profile enabled): `9093`
-- Grafana (when `monitoring` profile enabled): `3000` (`admin` / `admin` by default)
-- DCGM exporter (when `gpu-monitoring` profile enabled): `9400`
-
-Notes:
-- In Docker Compose, API container uses internal service names (`chromadb`, `dynamodb-local`).
-- For local non-container runs, keep `.env` values at localhost defaults.
-- In `ui` profile, frontend container calls API at `http://api:8080/api/v1`.
-- API container mounts `${LLM_MODEL_HOST_PATH}` to `${LLM_MODEL_CONTAINER_ROOT}` (read-only).
-- To avoid CPU/RAM spikes on Docker Desktop, keep `gpu-monitoring` profile off unless needed and use resource limits from `.env` (`API_MEM_LIMIT`, `API_CPUS_LIMIT`, etc.).
-
-To stop containers:
-
-```powershell
-docker compose down
+```bash
+python src/pipelines/vector_ingest/pipeline_cli.py \
+  --input example-dataset/chunks.jsonl \
+  --apply \
+  --reset-chroma-collection
 ```
 
-To stop containers and remove persisted local volumes:
+## Observability
 
-```powershell
-docker compose down -v
-```
+`/metrics` exposes standard HTTP metrics **plus** RAG-specific ones:
 
-## Run The API
-
-Local non-container run:
-
-```powershell
-uvicorn src.api.main:app --reload --port 8080
-```
-
-Health endpoint:
-
-- `GET /`
-- `GET /health/live`
-- `GET /health/ready`
-- `GET /health/deep`
-
-Main endpoints:
-
-- `POST /api/v1/ingest`
-- `POST /api/v1/retrieve`
-- `GET /metrics`
-- `GET /api/v1/reconcile`
-- `GET /api/v1/reconcile/last`
-- `POST /api/v1/reconcile/repair`
-
-`/metrics` now exports both generic HTTP metrics and RAG-flow metrics, including:
-- `http_requests_total`, `http_request_duration_seconds`
 - `rag_retrieve_requests_total`, `rag_retrieve_duration_seconds`
 - `rag_ingest_requests_total`, `rag_ingest_chunks_total`, `rag_ingest_duration_seconds`
 - `rag_reconcile_runs_total`, `rag_reconcile_only_in_chroma`, `rag_reconcile_only_in_dynamo`, `rag_reconcile_is_consistent`
 - `rag_repair_requests_total`, `rag_repair_duration_seconds`
 
-GPU metrics are scraped from `dcgm-exporter` when enabled (examples):
-- `DCGM_FI_DEV_GPU_UTIL`
-- `DCGM_FI_DEV_FB_USED`
-- `DCGM_FI_DEV_GPU_TEMP`
-- `DCGM_FI_DEV_POWER_USAGE`
+Alert rules ([monitoring/prometheus/alerts.yml](monitoring/prometheus/alerts.yml)): `HighApi5xxRate`, `HighApiP95Latency`, `GpuExporterDown`.
 
-## Monitoring Runbooks
-
-Operational runbooks are available under `monitoring/runbooks/`:
-
-- `retrieve_incident_runbook.txt`
-- `reconcile_repair_runbook.txt`
-- `gpu_fallback_runbook.txt`
-
-When `ENFORCE_ADMIN_AUTH=true`, admin endpoints require header:
-
-- `X-Admin-Key: <ADMIN_API_KEY>`
-
-Protected endpoints:
-- `POST /api/v1/ingest`
-- `GET /api/v1/reconcile`
-- `GET /api/v1/reconcile/last`
-- `POST /api/v1/reconcile/repair`
-
-Error response model (for non-2xx responses):
-- `detail.message`: safe human-readable message
-- `detail.error_code`: stable code for programmatic handling
-- `detail.error_category`: one of `auth_error`, `client_error`, `infrastructure_error`, `server_error`
-- `detail.request_id`: request correlation id (matches `X-Request-ID`)
-
-Operator note:
-- Gradio UI surfaces these error fields directly, so operators can quickly triage by `error_code` and `request_id`.
-
-## Run The Gradio UI
-
-```powershell
-python src/frontend/app.py
-```
-
-The UI is a thin client over the API:
-
-- Left side: document ingest
-- Right side: retrieval and answer generation
-
-## API Examples
-
-### Ingest A Document
-
-```powershell
-curl -X POST http://localhost:8080/api/v1/ingest `
-  -H "Content-Type: application/json" `
-  -d "{\"document_text\":\"VAT on hotel stays in Sweden may use a reduced rate of 12 percent.\",\"source_name\":\"hotel_vat_notes.txt\"}"
-```
-
-### Ask A Question
-
-```powershell
-curl -X POST http://localhost:8080/api/v1/retrieve `
-  -H "Content-Type: application/json" `
-  -d "{\"query\":\"What tax rate applies to staying in a hotel?\",\"top_k\":2}"
-```
+Operator runbooks ship with the repo:
+- [monitoring/runbooks/retrieve_incident_runbook.txt](monitoring/runbooks/retrieve_incident_runbook.txt)
+- [monitoring/runbooks/reconcile_repair_runbook.txt](monitoring/runbooks/reconcile_repair_runbook.txt)
+- [monitoring/runbooks/gpu_fallback_runbook.txt](monitoring/runbooks/gpu_fallback_runbook.txt)
 
 ## Tests
 
-Run the automated unit tests:
-
-```powershell
-pytest -q
+```bash
+pytest -q                    # unit tests (29 passed locally)
+pytest -q -m integration     # requires MASTER_ENCRYPTION_KEY + live Chroma/Dynamo
 ```
 
-Run integration test (requires local Docker services + encryption key):
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
+- `ruff` lint gate (syntax/undefined-name critical rules)
+- Prometheus config + rules validation via `promtool`
+- Import smoke for core modules
+- `pytest -m "not integration"`
+- Monitoring smoke subset (`-k "metrics or health"`)
+- Optional integration job on `workflow_dispatch` with real Chroma + Dynamo service containers
 
-```powershell
-pytest -q -m integration
+## Project layout
+
+```
+.
+├── src/
+│   ├── api/           # FastAPI app, schemas, middleware, error envelope
+│   ├── core/          # config, DI factories, Fernet manager, typed exceptions
+│   ├── db/            # Chroma client, Dynamo client, encrypted document repo
+│   ├── engine/        # RAG orchestration, LLM wrapper
+│   ├── frontend/      # Gradio app (retrieval-only)
+│   └── pipelines/     # Dataset ingest CLI (validate → normalize → precheck → ingest)
+├── tests/             # pytest suite (unit + integration marker)
+├── monitoring/        # Prometheus, Grafana, Alertmanager, runbooks
+├── docker/            # Local state volumes for Chroma + Dynamo
+├── .github/workflows/ # CI definitions
+├── docker-compose.yml
+├── Dockerfile
+├── AGENT.md           # Zero-memory onboarding guide for future contributors / AI agents (TR)
+├── TASKS.md           # Live roadmap + reality check (TR)
+└── NOTES.md           # Owner's personal interview notebook (TR) — do not edit
 ```
 
-Optional manual DB inspection:
+## Security model (honest version)
 
-```powershell
-python tests\inspect_dbs.py
-```
+- ChromaDB stores embeddings and IDs. Raw text is never written there.
+- DynamoDB stores Fernet-encrypted text keyed by `chunk_id`.
+- Decryption happens only in application memory, right before the LLM call.
+- The master key lives on the application host — so **this is at-rest protection, not end-to-end encryption.** If the process is compromised, the key is too. This is a deliberate tradeoff for a single-tenant prototype.
+- Admin-mutating endpoints are gated by `X-Admin-Key`. `CONTEXT_RESPONSE_MODE` decides whether the API is allowed to leak decrypted text back over the wire at all.
 
-## Dataset Ingest Pipeline
+## Roadmap
 
-Production-oriented ingest utilities are available under:
-- `src/pipelines/vector_ingest/`
+See [TASKS.md](TASKS.md) for the tracked work, but in short:
 
-Modules:
-- `dataset_validator.py`: validates JSONL schema and chunk quality
-- `dataset_normalizer.py`: applies text normalization and updates hash/counters
-- `ingest_precheck.py`: dry-run collision report against current Dynamo/Chroma state
-- `chunk_ingest_runner.py`: idempotent write flow (Dynamo encrypted text + Chroma vectors)
-- `pipeline_cli.py`: orchestrates validate -> normalize -> precheck -> ingest
-
-Example full run:
-
-```powershell
-python src/pipelines/vector_ingest/pipeline_cli.py `
-  --input example-dataset/chunks.jsonl `
-  --apply `
-  --reset-chroma-collection
-```
-
-## CI Quality Gate
-
-GitHub Actions (`.github/workflows/ci.yml`) runs these checks on `push` and `pull_request`:
-- lint sanity gate (`ruff`, selected critical rules: syntax/undefined-name class errors)
-- import smoke for core modules
-- unit test suite (`pytest -q -m "not integration"`)
-
-Optional integration stage:
-- A separate `integration` job exists in CI and runs on manual trigger (`workflow_dispatch`).
-
-Integration tests are also available locally:
-
-```powershell
-pytest -q -m integration
-```
-
-## Configuration Notes
-
-Relevant values in `src/core/config.py`:
-
-- `API_PORT`
-- `API_BASE_URL`
-- `CHROMA_HOST`
-- `CHROMA_PORT`
-- `DYNAMO_ENDPOINT`
-- `DYNAMO_REGION`
-- `MASTER_ENCRYPTION_KEY`
-- `LLM_MODEL_PATH`
-- `EMBEDDING_MODEL`
-- `CHUNK_SIZE`
-- `CHUNK_OVERLAP`
-- `LLM_MAX_NEW_TOKENS`
-- `LLM_TEMPERATURE`
-- `RETURN_CONTEXTS_IN_RESPONSE`
-- `CONTEXT_RESPONSE_MODE`
-- `RECONCILE_AUTORUN`
-- `RECONCILE_INTERVAL_SECONDS`
-- `ENFORCE_ADMIN_AUTH`
-- `ADMIN_API_KEY`
-
-`CONTEXT_RESPONSE_MODE` behaviors:
-- `none`: never include contexts in API responses
-- `redacted`: include metadata only (context index and character count)
-- `full`: include full decrypted contexts (if `ENFORCE_ADMIN_AUTH=true`, valid admin key is required to see full contexts)
-
-At the moment, not every module actually respects these settings consistently. Some database connection values are still hard-coded in the client classes.
-
-## Security Model
-
-The repository is designed around a simple rule:
-
-- Do not store raw document text inside the vector database.
-
-Current behavior:
-
-- ChromaDB stores embeddings and chunk IDs
-- DynamoDB stores encrypted chunk text
-- Decryption happens inside the application before generation
-
-This is a reasonable prototype pattern, but the current API still returns decrypted context to the caller. That is convenient for debugging, but it weakens the security story and should probably become optional or be removed in a hardened version.
-
-## Known Limitations
-
-- Importing the LLM module triggers immediate model loading
-- Importing storage modules can trigger real local infrastructure access
-- Ingest writes are not atomic across both databases
-- Error handling is basic and mostly returns generic `500` responses
-- Metadata handling is incomplete and inconsistent
-- The frontend is useful for demos but not hardened for operational use
-- There is no CI pipeline, Dockerfile for the app, or production deployment path yet
-- The repository currently includes generated and stateful artifacts that should usually be excluded from version control
-
-## Suggested Next Steps
-
-See `ADVICE.md` for a prioritized improvement plan.
-
-High-level direction:
-
-1. Remove import-time side effects and use dependency injection
-2. Centralize configuration usage
-3. Replace script-style tests with automated unit and integration tests
-4. Add failure handling for partial ingest writes
-5. Tighten the security boundary around decrypted text
-
-## Reconciliation Runbook
-
-Use this runbook when Chroma and Dynamo drift apart.
-
-1. Detect drift
-
-```powershell
-curl http://localhost:8080/api/v1/reconcile
-```
-
-2. Review categories
-- `only_in_chroma`: vector exists but encrypted text does not.
-- `only_in_dynamo`: encrypted text exists but vector does not.
-
-3. Choose repair strategy
-- `only_in_chroma_action=delete` removes orphan vectors.
-- `only_in_dynamo_action=rehydrate` decrypts Dynamo chunk and recreates vector.
-- `mark_for_review` leaves records untouched and flags them in response.
-
-4. Execute repair
-
-```powershell
-curl -X POST http://localhost:8080/api/v1/reconcile/repair `
-  -H "Content-Type: application/json" `
-  -d "{\"only_in_chroma_action\":\"delete\",\"only_in_dynamo_action\":\"rehydrate\"}"
-```
-
-5. Validate final state
-
-```powershell
-curl http://localhost:8080/api/v1/reconcile/last
-```
-
-If `is_consistent=false` remains after repair, inspect `failed` and `marked_for_review` lists and triage those IDs manually.
-
-## Operational Playbooks
-
-### Setup Playbook
-1. Copy `.env.example` to `.env`.
-2. Set `MASTER_ENCRYPTION_KEY`.
-3. Start stack with `docker compose up -d` (or add `--profile ui`).
-4. Verify health:
-5. `GET http://localhost:8080/`
-6. optional: open `http://localhost:8501` (UI profile).
-
-### Recovery Playbook
-1. Check API health endpoint.
-2. Run reconcile (`GET /api/v1/reconcile` with admin key if enforced).
-3. Run repair (`POST /api/v1/reconcile/repair`) using safe defaults:
-4. `only_in_chroma_action=delete`
-5. `only_in_dynamo_action=rehydrate`
-6. Validate with `GET /api/v1/reconcile/last`.
-7. If failures remain, inspect `failed` IDs and retry targeted repair.
-
-### Release Playbook
-1. Run local checks:
-2. `ruff check . --select E9,F63,F7,F82 --target-version py312`
-3. `pytest -q -m "not integration"`
-4. Ensure CI (`quality-gate`) is green on branch.
-5. Optionally trigger manual integration CI job (`workflow_dispatch`).
-6. Tag release and push:
-7. `git tag vX.Y.Z`
-8. `git push origin main --tags`
+1. Make GPU optional via a compose override so non-GPU hosts can actually run the stack.
+2. Migrate FastAPI `on_event` hooks to the modern `lifespan` handler.
+3. Expand the context-exposure policy test matrix.
+4. Decide whether Gradio stays retrieval-only or gains an admin-gated operator surface.
+5. Document a production secret-management strategy end-to-end.
 
 ## License
 
-No license file is present in the repository yet. Add one before public distribution.
+No license file yet. Add one before public distribution.
+
+---
+
+<sub>Built as a prototype to explore split-storage RAG security patterns, not as a production-ready service. Read [AGENT.md](AGENT.md) before contributing.</sub>
