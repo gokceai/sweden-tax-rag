@@ -5,7 +5,7 @@ An early-stage prototype of a secure Retrieval-Augmented Generation (RAG) servic
 The project combines:
 
 - FastAPI for the API
-- Streamlit for a simple operator UI
+- Gradio for a simple operator UI
 - ChromaDB for semantic search
 - DynamoDB Local for encrypted chunk storage
 - `cryptography.Fernet` for encryption at rest
@@ -58,7 +58,7 @@ If you treat this as a prototype or architecture spike, the repository makes sen
 - `src/db/document_repo.py`: Encrypted chunk persistence
 - `src/engine/rag_core.py`: Chunking, ingest, and retrieval logic
 - `src/engine/llm_engine.py`: Local LLM loading and text generation
-- `src/frontend/app.py`: Streamlit user interface
+- `src/frontend/app.py`: Gradio user interface
 
 ## Repository Layout
 
@@ -179,7 +179,7 @@ Default stack (API + DynamoDB Local + ChromaDB):
 docker compose up -d
 ```
 
-With Streamlit UI container:
+With Gradio UI container:
 
 ```powershell
 docker compose --profile ui up -d
@@ -202,7 +202,7 @@ Expected ports:
 - API: `8080`
 - DynamoDB Local: `8000`
 - ChromaDB HTTP API: `8001`
-- Streamlit UI (when `ui` profile enabled): `8501`
+- Gradio UI (when `ui` profile enabled): `8501`
 - Prometheus (when `monitoring` profile enabled): `9090`
 - Alertmanager (when `monitoring` profile enabled): `9093`
 - Grafana (when `monitoring` profile enabled): `3000` (`admin` / `admin` by default)
@@ -289,12 +289,12 @@ Error response model (for non-2xx responses):
 - `detail.request_id`: request correlation id (matches `X-Request-ID`)
 
 Operator note:
-- Streamlit UI surfaces these error fields directly, so operators can quickly triage by `error_code` and `request_id`.
+- Gradio UI surfaces these error fields directly, so operators can quickly triage by `error_code` and `request_id`.
 
-## Run The Streamlit UI
+## Run The Gradio UI
 
 ```powershell
-streamlit run src/frontend/app.py
+python src/frontend/app.py
 ```
 
 The UI is a thin client over the API:

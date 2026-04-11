@@ -5,7 +5,7 @@
 - Expected: cuda_available=True
 
 2) Confirm app environment
-- Ensure Streamlit/API is launched from project venv (.taxtenv)
+- Ensure Gradio/API is launched from project venv (.taxtenv)
 - Mismatch between global python and venv causes CPU fallback
 
 3) Confirm model device

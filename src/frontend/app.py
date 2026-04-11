@@ -1,84 +1,95 @@
 import requests
-import streamlit as st
+import gradio as gr
 
 from src.core.config import settings
 
 API_URL = settings.API_BASE_URL
 
-st.set_page_config(page_title=settings.PROJECT_NAME, page_icon="SE", layout="centered")
+CUSTOM_CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap');
 
-st.markdown(
-    """
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap');
+:root {
+  --bg-start: #101926;
+  --bg-end: #18263a;
+  --text-main: #eef5ff;
+  --text-subtle: #dce7f6;
+  --button-start: #14b8a6;
+  --button-end: #0f766e;
+}
 
-        .stApp {
-            font-family: 'Manrope', sans-serif;
-            background: linear-gradient(165deg, #101926 0%, #18263a 100%);
-            color: #eef5ff;
-        }
+.gradio-container {
+  font-family: 'Manrope', sans-serif !important;
+  background: linear-gradient(165deg, var(--bg-start) 0%, var(--bg-end) 100%);
+  color: var(--text-main);
+}
 
-        .block-container {
-            max-width: 760px;
-            padding-top: 3.5rem;
-            padding-bottom: 2rem;
-        }
+#app-title {
+  text-align: center;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.8rem;
+}
 
-        h1 {
-            text-align: center;
-            letter-spacing: -0.02em;
-            margin-bottom: 2rem;
-        }
+#app-subtitle {
+  text-align: center;
+  color: var(--text-subtle);
+  margin-bottom: 1.2rem;
+}
 
-        div[data-testid="stTextInput"] input {
-            background: #ffffff !important;
-            color: #0f172a !important;
-            border: 1px solid #e5e7eb !important;
-            border-radius: 14px !important;
-            min-height: 3rem !important;
-        }
+button.primary {
+  border: none !important;
+  border-radius: 999px !important;
+  background: linear-gradient(135deg, var(--button-start), var(--button-end)) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+"""
 
-        div[data-testid="stTextInput"] label p {
-            color: #dce7f6 !important;
-            font-weight: 700;
-        }
 
-        .stButton > button {
-            width: 100%;
-            border-radius: 999px;
-            border: none;
-            background: linear-gradient(135deg, #14b8a6, #0f766e);
-            color: #ffffff;
-            font-weight: 700;
-            min-height: 2.8rem;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+def ask_question(question: str) -> tuple[str, str]:
+    prompt = (question or "").strip()
+    if len(prompt) < 5:
+        return "", "Question must be at least 5 characters."
 
-st.title(settings.PROJECT_NAME)
+    try:
+        response = requests.post(
+            f"{API_URL}/retrieve",
+            json={"query": prompt, "top_k": 2},
+            timeout=90,
+        )
+    except requests.RequestException as exc:
+        return "", f"API connection error: {exc}"
 
-question = st.text_input(
-    "Question",
-    placeholder="Ask your Swedish tax question...",
-    label_visibility="collapsed",
-)
+    if response.status_code != 200:
+        return "", f"Request failed ({response.status_code})."
 
-if st.button("Ask"):
-    if len(question.strip()) < 5:
-        st.warning("Question must be at least 5 characters.")
-    else:
-        try:
-            response = requests.post(
-                f"{API_URL}/retrieve",
-                json={"query": question, "top_k": 2},
-                timeout=90,
-            )
-            if response.status_code == 200:
-                payload = response.json()
-                st.write(payload.get("answer", ""))
-            else:
-                st.error(f"Request failed ({response.status_code}).")
-        except requests.RequestException as exc:
-            st.error(f"API connection error: {exc}")
+    payload = response.json()
+    return payload.get("answer", ""), ""
+
+
+def build_app() -> gr.Blocks:
+    with gr.Blocks(title=settings.PROJECT_NAME, css=CUSTOM_CSS) as demo:
+        gr.Markdown(f"## {settings.PROJECT_NAME}", elem_id="app-title")
+        gr.Markdown("Ask your Swedish tax question through the API.", elem_id="app-subtitle")
+
+        question = gr.Textbox(
+            label="Question",
+            placeholder="Ask your Swedish tax question...",
+            lines=3,
+            max_lines=6,
+        )
+        ask_btn = gr.Button("Ask", variant="primary")
+
+        answer = gr.Markdown(label="Answer")
+        error = gr.Markdown(label="Status")
+
+        ask_btn.click(ask_question, inputs=[question], outputs=[answer, error])
+        question.submit(ask_question, inputs=[question], outputs=[answer, error])
+
+    return demo
+
+
+app = build_app()
+
+
+if __name__ == "__main__":
+    app.launch(server_name="0.0.0.0", server_port=8501, show_api=False)

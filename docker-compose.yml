@@ -34,7 +34,7 @@ services:
       dockerfile: Dockerfile
     container_name: sweden-tax-frontend
     restart: unless-stopped
-    command: streamlit run src/frontend/app.py --server.address 0.0.0.0 --server.port 8501
+    command: python src/frontend/app.py
     ports:
       - "8501:8501"
     env_file:
