@@ -12,6 +12,20 @@ class AnswerGenerator:
         self.model_path = settings.LLM_MODEL_PATH
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.dtype = torch.float16 if self.device == "cuda" else torch.float32
+        if self.device == "cuda":
+            logger.info(
+                "GPU detected - LLM will run on CUDA (dtype=%s). Model: %s",
+                self.dtype,
+                self.model_path,
+            )
+        else:
+            logger.warning(
+                "No GPU detected - LLM will run on CPU (dtype=%s, slower). "
+                "To enable GPU: use docker-compose.gpu.yml or ensure NVIDIA runtime is installed. "
+                "Model: %s",
+                self.dtype,
+                self.model_path,
+            )
         self.tokenizer = None
         self.model = None
 
@@ -41,7 +55,8 @@ class AnswerGenerator:
     def generate_answer(self, query: str, contexts: list) -> str:
         if not contexts:
             return self.settings.WARNING_PROMPT
-        self._ensure_model_loaded()
+        if self.model is None or self.tokenizer is None:
+            self._ensure_model_loaded()
 
         combined_context = "\n\n".join(contexts)
         prompt = self.settings.SYSTEM_PROMPT.format(context=combined_context, query=query)

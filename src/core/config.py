@@ -15,11 +15,15 @@ class Settings:
     API_BASE_URL = os.getenv("API_BASE_URL", f"http://localhost:{API_PORT}/api/v1")
 
     # Database settings
-    CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
-    CHROMA_PORT = int(os.getenv("CHROMA_PORT", 8001))
+    CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./docker/chroma_data")
     CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "swedish_tax_vectors")
     CHROMA_DISTANCE = os.getenv("CHROMA_DISTANCE", "cosine")
 
+    # SQLite encrypted document store (replaces DynamoDB Local)
+    SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "./docker/documents.db")
+
+    # DynamoDB settings kept only for the one-time migration script (migrate_dynamo_to_sqlite.py).
+    # Remove after migration is complete.
     DYNAMO_ENDPOINT = os.getenv("DYNAMO_ENDPOINT", "http://localhost:8000")
     DYNAMO_REGION = os.getenv("DYNAMO_REGION", "eu-north-1")
     DYNAMO_TABLE_NAME = os.getenv("DYNAMO_TABLE_NAME", "SwedishTaxDocuments")

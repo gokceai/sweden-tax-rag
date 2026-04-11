@@ -53,6 +53,7 @@ jobs:
               "src.core.dependencies",
               "src.engine.rag_core",
               "src.db.chroma_client",
+              "src.db.sqlite_document_repo",
               "src.db.document_repo",
               "src.db.dynamo_client",
               "src.frontend.app",
@@ -72,29 +73,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     if: github.event_name == 'workflow_dispatch'
-
-    services:
-      dynamodb:
-        image: amazon/dynamodb-local:latest
-        ports:
-          - 8000:8000
-        options: >-
-          --health-cmd "wget -qO- http://localhost:8000/shell/ || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 20
-      chroma:
-        image: chromadb/chroma:latest
-        ports:
-          - 8001:8000
-        env:
-          IS_PERSISTENT: "FALSE"
-          ANONYMIZED_TELEMETRY: "FALSE"
-        options: >-
-          --health-cmd "wget -qO- http://localhost:8000/api/v2/heartbeat || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 20
 
     steps:
       - name: Checkout
@@ -118,7 +96,37 @@ jobs:
       - name: Run integration tests
         env:
           MASTER_ENCRYPTION_KEY: MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=
-          CHROMA_HOST: localhost
-          CHROMA_PORT: 8001
-          DYNAMO_ENDPOINT: http://localhost:8000
+          CHROMA_PERSIST_DIR: /tmp/test_chroma
+          SQLITE_DB_PATH: /tmp/test_documents.db
         run: pytest -q -m integration
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy env
+        run: |
+          cp .env.example .env
+          KEY=$(python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())")
+          echo "MASTER_ENCRYPTION_KEY=${KEY}" >> .env
+
+      - name: Start API (CPU mode)
+        run: docker compose up -d api
+
+      - name: Wait for health/ready
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8080/health/ready && echo "ready" && exit 0
+            sleep 3
+          done
+          echo "Timed out"
+          docker compose logs api
+          exit 1
+
+      - name: Teardown
+        if: always()
+        run: docker compose down

@@ -1,10 +1,10 @@
-"""Idempotent pre-chunked ingest runner for DynamoDB + ChromaDB.
+"""Idempotent pre-chunked ingest runner for SQLite + ChromaDB.
 
 Write order:
-1. Encrypt and write chunk text to DynamoDB.
+1. Encrypt and write chunk text to SQLite.
 2. Embed and upsert vector to ChromaDB.
 
-If vector upsert fails after Dynamo write, Dynamo row is rolled back
+If vector upsert fails after document-store write, the row is rolled back
 for that chunk to keep stores consistent.
 """
 
@@ -46,7 +46,7 @@ def build_metadata(row: dict) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Ingest pre-chunked JSONL into DynamoDB and ChromaDB.")
+    parser = argparse.ArgumentParser(description="Ingest pre-chunked JSONL into SQLite and ChromaDB.")
     parser.add_argument("--input", required=True, help="Path to chunks JSONL")
     parser.add_argument("--limit", type=int, default=0, help="Optional max row count (0 means all)")
     parser.add_argument("--apply", action="store_true", help="Execute writes. Without this flag, dry-run only.")
@@ -79,7 +79,7 @@ def main() -> int:
         vector_db.collection = vector_db._init_collection()
 
     chroma_existing = vector_db.list_ids()
-    dynamo_existing = document_repo.list_chunk_ids()
+    document_store_existing = document_repo.list_chunk_ids()
 
     report = {
         "mode": "apply" if args.apply else "dry-run",
@@ -88,7 +88,7 @@ def main() -> int:
         "processed": 0,
         "would_create": 0,
         "would_update": 0,
-        "written_dynamo": 0,
+        "written_document_store": 0,
         "written_chroma": 0,
         "failed": 0,
         "failed_chunk_ids": [],
@@ -100,8 +100,8 @@ def main() -> int:
         metadata = build_metadata(row)
 
         exists_chroma = chunk_id in chroma_existing
-        exists_dynamo = chunk_id in dynamo_existing
-        if exists_chroma or exists_dynamo:
+        exists_in_document_store = chunk_id in document_store_existing
+        if exists_chroma or exists_in_document_store:
             report["would_update"] += 1
         else:
             report["would_create"] += 1
@@ -110,13 +110,13 @@ def main() -> int:
             report["processed"] += 1
             continue
 
-        dynamo_ok = document_repo.save_document_chunk(chunk_id, text, metadata)
-        if not dynamo_ok:
+        document_store_ok = document_repo.save_document_chunk(chunk_id, text, metadata)
+        if not document_store_ok:
             report["failed"] += 1
             report["failed_chunk_ids"].append(chunk_id)
             report["processed"] += 1
             continue
-        report["written_dynamo"] += 1
+        report["written_document_store"] += 1
 
         chroma_ok = vector_db.add_or_update_vector(chunk_id, text, metadata=metadata)
         if not chroma_ok:
@@ -140,7 +140,7 @@ def main() -> int:
         "processed",
         "would_create",
         "would_update",
-        "written_dynamo",
+        "written_document_store",
         "written_chroma",
         "failed",
     ]:
@@ -152,4 +152,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

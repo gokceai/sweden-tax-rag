@@ -26,9 +26,8 @@ class FakeClient:
 def test_chroma_manager_uses_settings(monkeypatch):
     captured = {}
 
-    def fake_http_client(host, port):
-        captured["host"] = host
-        captured["port"] = port
+    def fake_persistent_client(path):
+        captured["persist_dir"] = path
         return FakeClient()
 
     class FakeEmbeddingFunction:
@@ -38,7 +37,7 @@ def test_chroma_manager_uses_settings(monkeypatch):
         def __call__(self, texts):
             return [[0.1, 0.2, 0.3] for _ in texts]
 
-    monkeypatch.setattr("src.db.chroma_client.chromadb.HttpClient", fake_http_client)
+    monkeypatch.setattr("src.db.chroma_client.chromadb.PersistentClient", fake_persistent_client)
     monkeypatch.setattr(
         "src.db.chroma_client.embedding_functions.SentenceTransformerEmbeddingFunction",
         FakeEmbeddingFunction,
@@ -47,8 +46,7 @@ def test_chroma_manager_uses_settings(monkeypatch):
     manager = VectorDBManager()
 
     assert manager.collection_name == settings.CHROMA_COLLECTION_NAME
-    assert captured["host"] == settings.CHROMA_HOST
-    assert captured["port"] == settings.CHROMA_PORT
+    assert captured["persist_dir"] == settings.CHROMA_PERSIST_DIR
     assert captured["embedding_model"] == settings.EMBEDDING_MODEL
 
     assert manager.search_similar_ids("vat", 1) == ["chunk-1"]

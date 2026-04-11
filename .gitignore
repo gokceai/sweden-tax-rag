@@ -12,3 +12,4 @@ docker/dynamodb_data/
 *.egg-info/
 phases_progress.md
 example-dataset
+todo.md

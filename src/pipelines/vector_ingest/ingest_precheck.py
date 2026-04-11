@@ -1,7 +1,7 @@
 """Dry-run precheck for pre-chunked ingest.
 
 Reports collision status between dataset chunk IDs and current
-Chroma/Dynamo contents without writing any data.
+Chroma/document-store contents without writing any data.
 """
 
 import argparse
@@ -40,14 +40,14 @@ def main() -> int:
     vector_db = get_vector_db_manager()
     repo = get_document_repository()
     chroma_ids = vector_db.list_ids()
-    dynamo_ids = repo.list_chunk_ids()
+    document_store_ids = repo.list_chunk_ids()
 
     in_chroma = unique_ids & chroma_ids
-    in_dynamo = unique_ids & dynamo_ids
-    in_both = in_chroma & in_dynamo
-    only_chroma = in_chroma - in_dynamo
-    only_dynamo = in_dynamo - in_chroma
-    in_neither = unique_ids - (in_chroma | in_dynamo)
+    in_document_store = unique_ids & document_store_ids
+    in_both = in_chroma & in_document_store
+    only_chroma = in_chroma - in_document_store
+    only_document_store = in_document_store - in_chroma
+    in_neither = unique_ids - (in_chroma | in_document_store)
 
     print("INGEST PRECHECK REPORT (DRY RUN)")
     print(f"input_file: {input_path}")
@@ -57,18 +57,17 @@ def main() -> int:
     if duplicate_ids:
         print(f"duplicate_samples: {sorted(duplicate_ids)[:10]}")
     print(f"existing_in_chroma: {len(in_chroma)}")
-    print(f"existing_in_dynamo: {len(in_dynamo)}")
+    print(f"existing_in_document_store: {len(in_document_store)}")
     print(f"already_consistent_in_both: {len(in_both)}")
     print(f"drift_only_in_chroma: {len(only_chroma)}")
-    print(f"drift_only_in_dynamo: {len(only_dynamo)}")
+    print(f"drift_only_in_document_store: {len(only_document_store)}")
     print(f"new_ids_in_neither: {len(in_neither)}")
     print("planned_actions:")
-    print(f"  upsert_chroma: {len(in_neither) + len(in_dynamo) + len(in_both)}")
-    print(f"  write_dynamo: {len(in_neither) + len(in_chroma) + len(in_both)}")
+    print(f"  upsert_chroma: {len(in_neither) + len(in_document_store) + len(in_both)}")
+    print(f"  write_document_store: {len(in_neither) + len(in_chroma) + len(in_both)}")
     print("note: this script performs no writes.")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

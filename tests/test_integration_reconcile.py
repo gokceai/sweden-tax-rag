@@ -1,33 +1,17 @@
-import socket
 import uuid
 
 import pytest
+from cryptography.fernet import Fernet
 
 from src.core.config import settings
 from src.core.security import EncryptionManager
 from src.db.chroma_client import VectorDBManager
-from src.db.document_repo import DocumentRepository
-from src.db.dynamo_client import DynamoDBManager
+from src.db.sqlite_document_repo import SQLiteDocumentRepository
 from src.engine.rag_core import RAGEngine
 
 
-def _service_reachable(host: str, port: int) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=1):
-            return True
-    except OSError:
-        return False
-
-
 @pytest.mark.integration
-def test_reconcile_and_repair_with_real_stores(monkeypatch):
-    if settings.MASTER_ENCRYPTION_KEY is None:
-        pytest.skip("MASTER_ENCRYPTION_KEY is required for integration test.")
-    if not _service_reachable(settings.CHROMA_HOST, settings.CHROMA_PORT):
-        pytest.skip("ChromaDB is not reachable.")
-    if "localhost" in settings.DYNAMO_ENDPOINT and not _service_reachable("localhost", 8000):
-        pytest.skip("DynamoDB local endpoint is not reachable.")
-
+def test_reconcile_and_repair_with_real_stores(monkeypatch, tmp_path):
     class FakeEmbeddingFunction:
         def __init__(self, model_name):
             self.model_name = model_name
@@ -45,10 +29,14 @@ def test_reconcile_and_repair_with_real_stores(monkeypatch):
         "src.db.chroma_client.embedding_functions.SentenceTransformerEmbeddingFunction",
         FakeEmbeddingFunction,
     )
+    monkeypatch.setattr("src.core.config.settings.CHROMA_PERSIST_DIR", str(tmp_path / "chroma"))
 
     vector_db = VectorDBManager()
-    table = DynamoDBManager().create_table_if_not_exists()
-    document_repo = DocumentRepository(table=table, encryption_manager=EncryptionManager(settings.MASTER_ENCRYPTION_KEY))
+    encryption_key = settings.MASTER_ENCRYPTION_KEY or Fernet.generate_key().decode("utf-8")
+    document_repo = SQLiteDocumentRepository(
+        db_path=str(tmp_path / "documents.db"),
+        encryption_manager=EncryptionManager(encryption_key),
+    )
     engine = RAGEngine(vector_db=vector_db, document_repo=document_repo, settings=settings)
 
     only_in_chroma_id = f"it_only_in_chroma_{uuid.uuid4().hex[:10]}"

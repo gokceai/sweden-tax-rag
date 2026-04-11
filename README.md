@@ -6,7 +6,7 @@ A security-first Retrieval-Augmented Generation prototype for Swedish tax law.
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-vector-4B0082)
-![DynamoDB](https://img.shields.io/badge/DynamoDB--Local-encrypted-232F3E)
+![SQLite](https://img.shields.io/badge/SQLite-encrypted-003B57)
 ![Prometheus](https://img.shields.io/badge/Prometheus-observability-E6522C)
 ![license](https://img.shields.io/badge/license-TBD-lightgrey)
 
@@ -22,14 +22,14 @@ It is a deliberate split-storage architecture with a reconciliation plane on top
 
 ## What's in the box
 
-- **Split storage with field-level encryption.** ChromaDB stores `chunk_id` + embedding; DynamoDB Local stores `chunk_id` + Fernet-encrypted text. Decryption happens in application memory, right before generation.
+- **Split storage with field-level encryption.** ChromaDB stores `chunk_id` + embedding; SQLite stores `chunk_id` + Fernet-encrypted text. Decryption happens in application memory, right before generation.
 - **Idempotent ingest.** Deterministic chunk IDs (`{source}_chunk_{i}_{sha256[:16]}`) make re-ingesting the same content a no-op instead of a duplicate.
 - **Cross-store reconciliation.** Dedicated `/reconcile` and `/reconcile/repair` endpoints detect and heal drift between the two stores (`delete`, `rehydrate`, `mark_for_review`) — plus an optional background worker.
 - **Pluggable admin auth + context redaction policy.** `ENFORCE_ADMIN_AUTH` gates sensitive endpoints via `X-Admin-Key`; `CONTEXT_RESPONSE_MODE` controls whether decrypted context leaks back over the wire (`none` / `redacted` / `full`).
 - **Three-tier health checks** (`/health/live`, `/health/ready`, `/health/deep`) and a structured error envelope with `request_id` correlation.
 - **Full Prometheus + Grafana + Alertmanager stack** with RAG-specific metrics (ingest/retrieve/reconcile/repair), SLO baselines, alert rules, and operator runbooks.
 - **Thin Gradio UI** scoped to retrieval — admin surface deliberately kept off the browser.
-- **CI quality gate** (lint, import smoke, unit tests, Prometheus config validation) + optional integration job against real Chroma/Dynamo containers.
+- **CI quality gate** (lint, import smoke, unit tests, Prometheus config validation) + optional integration and compose smoke jobs on `workflow_dispatch`.
 
 ## Architecture at a glance
 
@@ -53,11 +53,11 @@ It is a deliberate split-storage architecture with a reconciliation plane on top
        │                               │
  ┌─────┴──────┐                 ┌──────┴────────┐
  ▼            ▼                 ▼               ▼
-ChromaDB   DynamoDB          Transformers    Local Llama
+ChromaDB   SQLite            Transformers    Local Llama
 (vectors) (encrypted text)   + Torch (GPU)    weights
 ```
 
-**Data flow on retrieval:** question → embed → Chroma search returns top-k `chunk_id`s → Dynamo lookup → Fernet decrypt in memory → LLM generates an answer grounded strictly in the decrypted context → response (context is redacted/hidden per policy).
+**Data flow on retrieval:** question → embed → Chroma search returns top-k `chunk_id`s → SQLite lookup → Fernet decrypt in memory → LLM generates an answer grounded strictly in the decrypted context → response (context is redacted/hidden per policy).
 
 ## Tech stack (what's actually wired up)
 
@@ -65,8 +65,8 @@ ChromaDB   DynamoDB          Transformers    Local Llama
 |---|---|
 | API | FastAPI |
 | UI | **Gradio** (retrieval-only) |
-| Vector store | ChromaDB (HTTP client) |
-| Encrypted text store | DynamoDB Local |
+| Vector store | ChromaDB (`PersistentClient`) |
+| Encrypted text store | SQLite |
 | Encryption | `cryptography.Fernet` (AES-128-CBC + HMAC-SHA256) |
 | Embeddings | `sentence-transformers / all-MiniLM-L6-v2` (384-dim) |
 | Chunking | `langchain_text_splitters.RecursiveCharacterTextSplitter` |
@@ -83,7 +83,7 @@ cp .env.example .env
 # Generate a Fernet key and paste it into MASTER_ENCRYPTION_KEY
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
-docker compose up -d                              # api + chromadb + dynamodb-local
+docker compose up -d                              # api (CPU default)
 docker compose --profile ui up -d                 # + Gradio
 docker compose --profile monitoring up -d --no-build  # + Prometheus/Grafana/Alertmanager
 ```
@@ -93,8 +93,6 @@ Ports:
 | Service | Port |
 |---|---|
 | FastAPI | `8080` |
-| DynamoDB Local | `8000` |
-| ChromaDB | `8001` |
 | Gradio UI | `8501` |
 | Prometheus | `9090` |
 | Alertmanager | `9093` |
@@ -103,12 +101,15 @@ Ports:
 
 Stop the stack with `docker compose down` (or `docker compose down -v` to wipe local volumes).
 
-> **GPU assumption.** The `api` service currently pins `gpus: all` in `docker-compose.yml`. If you don't have NVIDIA runtime/CDI set up, the container won't start. Verify with:
+> **GPU kullanımı opsiyoneldir.** Varsayılan `docker compose up -d` GPU gerektirmez.
+> GPU etkinleştirmek için:
 > ```bash
-> docker info | grep -Ei 'runtimes|default runtime|nvidia|cdi'
-> docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi
+> docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 > ```
-> Making GPU optional via an override compose file is tracked in [TASKS.md](TASKS.md).
+> NVIDIA Container Toolkit kurulumunu doğrulamak için:
+> ```bash
+> docker info | grep -Ei 'runtimes|nvidia'
+> ```
 
 ## Quick start (local, no Docker)
 
@@ -123,6 +124,15 @@ python src/frontend/app.py                   # Gradio on :8501
 ```
 
 With no container, keep `.env` values at their `localhost` defaults — `docker-compose.yml` overrides service hostnames only inside containers.
+
+## HuggingFace Spaces deployment
+
+1. Fork this repository.
+2. In Hugging Face Spaces, create a new **Docker** Space.
+3. Copy `.env.example` values into Space secrets and set `MASTER_ENCRYPTION_KEY`.
+4. Use `Dockerfile.spaces` as the Space Dockerfile.
+5. Enable persistent storage (`/data` mount). Without it, data resets on restart.
+6. Keep `LLM_MODEL_PATH` as an HF repo ID if desired; the model downloads on first retrieval.
 
 ## Configuration that actually matters
 
@@ -156,7 +166,7 @@ Full list lives in [src/core/config.py](src/core/config.py). The critical ones:
 |---|---|
 | `GET /` | Liveness ping + service metadata |
 | `GET /health/live` | Process alive |
-| `GET /health/ready` | Chroma + Dynamo reachable (503 otherwise) |
+| `GET /health/ready` | Chroma + SQLite reachable (503 otherwise) |
 | `GET /health/deep` | Real query + scan probe (more expensive) |
 | `GET /metrics` | Prometheus format |
 
@@ -222,7 +232,7 @@ For pre-chunked JSONL corpora there is a dedicated pipeline under [src/pipelines
 pipeline_cli.py  →  dataset_validator.py
                  →  dataset_normalizer.py  (Unicode NFC + whitespace + hash refresh)
                  →  ingest_precheck.py     (dry-run collision report vs. current stores)
-                 →  chunk_ingest_runner.py (idempotent Dynamo + Chroma write)
+                 →  chunk_ingest_runner.py (idempotent SQLite + Chroma write)
 ```
 
 ```bash
@@ -251,8 +261,8 @@ Operator runbooks ship with the repo:
 ## Tests
 
 ```bash
-pytest -q                    # unit tests (29 passed locally)
-pytest -q -m integration     # requires MASTER_ENCRYPTION_KEY + live Chroma/Dynamo
+pytest -q                    # unit tests
+pytest -q -m integration     # embedded Chroma + SQLite integration checks
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
@@ -261,7 +271,7 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 - Import smoke for core modules
 - `pytest -m "not integration"`
 - Monitoring smoke subset (`-k "metrics or health"`)
-- Optional integration job on `workflow_dispatch` with real Chroma + Dynamo service containers
+- Optional integration + compose smoke jobs on `workflow_dispatch`
 
 ## Project layout
 
@@ -270,13 +280,15 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 ├── src/
 │   ├── api/           # FastAPI app, schemas, middleware, error envelope
 │   ├── core/          # config, DI factories, Fernet manager, typed exceptions
-│   ├── db/            # Chroma client, Dynamo client, encrypted document repo
+│   ├── db/            # Chroma client, SQLite repo, migration-only Dynamo client
 │   ├── engine/        # RAG orchestration, LLM wrapper
 │   ├── frontend/      # Gradio app (retrieval-only)
 │   └── pipelines/     # Dataset ingest CLI (validate → normalize → precheck → ingest)
 ├── tests/             # pytest suite (unit + integration marker)
 ├── monitoring/        # Prometheus, Grafana, Alertmanager, runbooks
-├── docker/            # Local state volumes for Chroma + Dynamo
+├── docker/            # Local state volumes for Chroma + SQLite
+├── docker-compose.gpu.yml
+├── Dockerfile.spaces
 ├── .github/workflows/ # CI definitions
 ├── docker-compose.yml
 ├── Dockerfile
@@ -288,7 +300,7 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 ## Security model (honest version)
 
 - ChromaDB stores embeddings and IDs. Raw text is never written there.
-- DynamoDB stores Fernet-encrypted text keyed by `chunk_id`.
+- SQLite stores Fernet-encrypted text keyed by `chunk_id`.
 - Decryption happens only in application memory, right before the LLM call.
 - The master key lives on the application host — so **this is at-rest protection, not end-to-end encryption.** If the process is compromised, the key is too. This is a deliberate tradeoff for a single-tenant prototype.
 - Admin-mutating endpoints are gated by `X-Admin-Key`. `CONTEXT_RESPONSE_MODE` decides whether the API is allowed to leak decrypted text back over the wire at all.
@@ -297,11 +309,9 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 
 See [TASKS.md](TASKS.md) for the tracked work, but in short:
 
-1. Make GPU optional via a compose override so non-GPU hosts can actually run the stack.
-2. Migrate FastAPI `on_event` hooks to the modern `lifespan` handler.
-3. Expand the context-exposure policy test matrix.
-4. Decide whether Gradio stays retrieval-only or gains an admin-gated operator surface.
-5. Document a production secret-management strategy end-to-end.
+1. Decide whether Gradio stays retrieval-only or gains an admin-gated operator surface.
+2. Document a production secret-management strategy end-to-end.
+3. Add rate limiting in front of admin endpoints for shared deployments.
 
 ## License
 

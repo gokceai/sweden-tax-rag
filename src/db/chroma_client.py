@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 class VectorDBManager:
     def __init__(self):
         try:
-            self.client = chromadb.HttpClient(host=settings.CHROMA_HOST, port=settings.CHROMA_PORT)
+            self.client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
         except Exception as e:
-            raise InfrastructureError(f"ChromaDB connection failed: {e}") from e
+            raise InfrastructureError(f"ChromaDB initialization failed: {e}") from e
         self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=settings.EMBEDDING_MODEL
         )

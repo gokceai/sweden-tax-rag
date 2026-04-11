@@ -10,18 +10,14 @@ services:
     env_file:
       - .env
     environment:
-      - CHROMA_HOST=chromadb
-      - CHROMA_PORT=8000
-      - DYNAMO_ENDPOINT=http://dynamodb-local:8000
+      - CHROMA_PERSIST_DIR=/app/docker/chroma_data
+      - SQLITE_DB_PATH=/app/docker/documents.db
       - LLM_MODEL_PATH=${LLM_MODEL_PATH_IN_CONTAINER:-${LLM_MODEL_PATH}}
     volumes:
+      - ./docker:/app/docker
       - ${LLM_MODEL_HOST_PATH:-./docker/llm_models}:${LLM_MODEL_CONTAINER_ROOT:-/models}:ro
-    gpus: all
     cpus: ${API_CPUS_LIMIT:-4.0}
     mem_limit: ${API_MEM_LIMIT:-6g}
-    depends_on:
-      - dynamodb-local
-      - chromadb
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/').read()"]
       interval: 30s
@@ -50,29 +46,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-
-  dynamodb-local:
-    image: "amazon/dynamodb-local:latest"
-    container_name: sweden-tax-dynamo
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    volumes:
-      - "./docker/dynamodb_data:/home/dynamodblocal/data"
-    working_dir: /home/dynamodblocal
-    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
-
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: sweden-tax-chroma
-    restart: unless-stopped
-    ports:
-      - "8001:8000"
-    volumes:
-      - "./docker/chroma_data:/data"
-    environment:
-      - IS_PERSISTENT=TRUE
-      - ANONYMIZED_TELEMETRY=FALSE
 
   prometheus:
     image: prom/prometheus:latest

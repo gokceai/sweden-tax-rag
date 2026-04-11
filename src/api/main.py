@@ -3,6 +3,7 @@ import threading
 import time
 import uuid
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -13,7 +14,7 @@ from src.api.schemas import IngestRequest, QueryRequest, ReconcileRepairRequest
 from src.core.config import settings
 from src.core.dependencies import (
     get_answer_generator,
-    get_dynamo_manager,
+    get_document_repository,
     get_rag_engine,
     get_vector_db_manager,
     require_admin_access,
@@ -22,10 +23,38 @@ from src.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.last_reconcile_result = None
+    app.state.reconcile_stop_event = threading.Event()
+    app.state.reconcile_thread = None
+
+    if settings.RECONCILE_AUTORUN:
+        worker = threading.Thread(
+            target=_run_scheduled_reconcile,
+            args=(app.state.reconcile_stop_event,),
+            daemon=True,
+            name="reconcile-worker",
+        )
+        worker.start()
+        app.state.reconcile_thread = worker
+
+    yield
+
+    stop_event = getattr(app.state, "reconcile_stop_event", None)
+    worker = getattr(app.state, "reconcile_thread", None)
+    if stop_event is not None:
+        stop_event.set()
+    if worker is not None:
+        worker.join(timeout=2)
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.PROJECT_DESCRIPTION,
     version=settings.PROJECT_VERSION,
+    lifespan=lifespan,
 )
 
 HTTP_REQUESTS_TOTAL = Counter(
@@ -250,35 +279,6 @@ def _run_scheduled_reconcile(stop_event: threading.Event):
         stop_event.wait(settings.RECONCILE_INTERVAL_SECONDS)
 
 
-@app.on_event("startup")
-def startup_reconcile_worker():
-    app.state.last_reconcile_result = None
-    app.state.reconcile_stop_event = threading.Event()
-    app.state.reconcile_thread = None
-
-    if not settings.RECONCILE_AUTORUN:
-        return
-
-    worker = threading.Thread(
-        target=_run_scheduled_reconcile,
-        args=(app.state.reconcile_stop_event,),
-        daemon=True,
-        name="reconcile-worker",
-    )
-    worker.start()
-    app.state.reconcile_thread = worker
-
-
-@app.on_event("shutdown")
-def shutdown_reconcile_worker():
-    stop_event = getattr(app.state, "reconcile_stop_event", None)
-    worker = getattr(app.state, "reconcile_thread", None)
-    if stop_event is not None:
-        stop_event.set()
-    if worker is not None:
-        worker.join(timeout=2)
-
-
 @app.get("/")
 def health_check():
     return {"status": "ACTIVE", "service": settings.PROJECT_NAME}
@@ -293,7 +293,7 @@ def health_live():
 def health_ready():
     checks = {
         "vector_db": {"ok": False, "message": None},
-        "dynamo_db": {"ok": False, "message": None},
+        "document_store": {"ok": False, "message": None},
     }
     overall_ok = True
 
@@ -305,11 +305,13 @@ def health_ready():
         checks["vector_db"]["message"] = str(e)
 
     try:
-        get_dynamo_manager().create_table_if_not_exists()
-        checks["dynamo_db"]["ok"] = True
+        ok = get_document_repository().ping()
+        if not ok:
+            raise RuntimeError("SQLite ping returned False")
+        checks["document_store"]["ok"] = True
     except Exception as e:
         overall_ok = False
-        checks["dynamo_db"]["message"] = str(e)
+        checks["document_store"]["message"] = str(e)
 
     payload = {"status": "ok" if overall_ok else "degraded", "mode": "ready", "checks": checks}
     if overall_ok:
@@ -321,7 +323,7 @@ def health_ready():
 def health_deep():
     checks = {
         "vector_db_query": {"ok": False, "message": None},
-        "dynamo_scan": {"ok": False, "message": None},
+        "document_store_scan": {"ok": False, "message": None},
     }
     overall_ok = True
 
@@ -333,12 +335,11 @@ def health_deep():
         checks["vector_db_query"]["message"] = str(e)
 
     try:
-        table = get_dynamo_manager().create_table_if_not_exists()
-        _ = table.scan(Limit=1)
-        checks["dynamo_scan"]["ok"] = True
+        _ = get_document_repository().list_chunk_ids()
+        checks["document_store_scan"]["ok"] = True
     except Exception as e:
         overall_ok = False
-        checks["dynamo_scan"]["message"] = str(e)
+        checks["document_store_scan"]["message"] = str(e)
 
     payload = {"status": "ok" if overall_ok else "degraded", "mode": "deep", "checks": checks}
     if overall_ok:

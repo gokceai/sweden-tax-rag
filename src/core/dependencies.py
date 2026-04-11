@@ -6,8 +6,7 @@ from src.core.config import settings
 from src.core.exceptions import ConfigurationError, InfrastructureError
 from src.core.security import EncryptionManager
 from src.db.chroma_client import VectorDBManager
-from src.db.document_repo import DocumentRepository
-from src.db.dynamo_client import DynamoDBManager
+from src.db.sqlite_document_repo import SQLiteDocumentRepository
 from src.engine.llm_engine import AnswerGenerator
 from src.engine.rag_core import RAGEngine
 
@@ -20,14 +19,6 @@ def get_encryption_manager() -> EncryptionManager:
 
 
 @lru_cache
-def get_dynamo_manager() -> DynamoDBManager:
-    try:
-        return DynamoDBManager()
-    except Exception as e:
-        raise InfrastructureError(f"DynamoDB manager initialization failed: {e}") from e
-
-
-@lru_cache
 def get_vector_db_manager() -> VectorDBManager:
     try:
         return VectorDBManager()
@@ -36,9 +27,14 @@ def get_vector_db_manager() -> VectorDBManager:
 
 
 @lru_cache
-def get_document_repository() -> DocumentRepository:
-    table = get_dynamo_manager().create_table_if_not_exists()
-    return DocumentRepository(table=table, encryption_manager=get_encryption_manager())
+def get_document_repository() -> SQLiteDocumentRepository:
+    try:
+        return SQLiteDocumentRepository(
+            db_path=settings.SQLITE_DB_PATH,
+            encryption_manager=get_encryption_manager(),
+        )
+    except Exception as e:
+        raise InfrastructureError(f"Document repository initialization failed: {e}") from e
 
 
 @lru_cache

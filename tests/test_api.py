@@ -199,18 +199,19 @@ def test_health_ready_endpoint(monkeypatch):
     class FakeVector:
         collection_name = "ok"
 
-    class FakeDynamo:
-        def create_table_if_not_exists(self):
-            return object()
+    class FakeDocRepo:
+        def ping(self):
+            return True
 
     monkeypatch.setattr("src.api.main.get_vector_db_manager", lambda: FakeVector())
-    monkeypatch.setattr("src.api.main.get_dynamo_manager", lambda: FakeDynamo())
+    monkeypatch.setattr("src.api.main.get_document_repository", lambda: FakeDocRepo())
     client = TestClient(app)
 
     response = client.get("/health/ready")
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert "document_store" in response.json()["checks"]
 
 
 def test_health_deep_endpoint(monkeypatch):
@@ -218,22 +219,19 @@ def test_health_deep_endpoint(monkeypatch):
         def search_similar_ids(self, query_text, n_results=1):
             return []
 
-    class FakeTable:
-        def scan(self, Limit=1):
-            return {"Items": []}
-
-    class FakeDynamo:
-        def create_table_if_not_exists(self):
-            return FakeTable()
+    class FakeDocRepo:
+        def list_chunk_ids(self):
+            return set()
 
     monkeypatch.setattr("src.api.main.get_vector_db_manager", lambda: FakeVector())
-    monkeypatch.setattr("src.api.main.get_dynamo_manager", lambda: FakeDynamo())
+    monkeypatch.setattr("src.api.main.get_document_repository", lambda: FakeDocRepo())
     client = TestClient(app)
 
     response = client.get("/health/deep")
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert "document_store_scan" in response.json()["checks"]
 
 
 def test_retrieve_unexpected_error_has_structured_detail(monkeypatch):
@@ -292,3 +290,79 @@ def test_retrieve_full_context_requires_admin_key_when_enforced(monkeypatch):
     assert unauthorized.json()["contexts"] is None
     assert authorized.status_code == 200
     assert authorized.json()["contexts"] == ["context a", "context b"]
+
+
+def test_context_none_mode_always_null(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.api.main.get_answer_generator", lambda: FakeAnswerGenerator())
+    monkeypatch.setattr("src.core.config.settings.RETURN_CONTEXTS_IN_RESPONSE", True)
+    monkeypatch.setattr("src.core.config.settings.CONTEXT_RESPONSE_MODE", "none")
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", False)
+    client = TestClient(app)
+
+    response = client.post("/api/v1/retrieve", json={"query": "vat rate", "top_k": 2})
+
+    assert response.status_code == 200
+    assert response.json()["contexts"] is None
+
+
+def test_context_full_no_auth_enforcement(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.api.main.get_answer_generator", lambda: FakeAnswerGenerator())
+    monkeypatch.setattr("src.core.config.settings.RETURN_CONTEXTS_IN_RESPONSE", True)
+    monkeypatch.setattr("src.core.config.settings.CONTEXT_RESPONSE_MODE", "full")
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", False)
+    client = TestClient(app)
+
+    response = client.post("/api/v1/retrieve", json={"query": "vat rate", "top_k": 2})
+
+    assert response.status_code == 200
+    assert response.json()["contexts"] == ["context a", "context b"]
+
+
+def test_context_full_wrong_key_returns_null(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.api.main.get_answer_generator", lambda: FakeAnswerGenerator())
+    monkeypatch.setattr("src.core.config.settings.RETURN_CONTEXTS_IN_RESPONSE", True)
+    monkeypatch.setattr("src.core.config.settings.CONTEXT_RESPONSE_MODE", "full")
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", True)
+    monkeypatch.setattr("src.core.config.settings.ADMIN_API_KEY", "secret-key")
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/retrieve",
+        json={"query": "vat rate", "top_k": 2},
+        headers={"X-Admin-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["contexts"] is None
+
+
+def test_context_redacted_with_auth_enforced_non_admin(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.api.main.get_answer_generator", lambda: FakeAnswerGenerator())
+    monkeypatch.setattr("src.core.config.settings.RETURN_CONTEXTS_IN_RESPONSE", True)
+    monkeypatch.setattr("src.core.config.settings.CONTEXT_RESPONSE_MODE", "redacted")
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", True)
+    monkeypatch.setattr("src.core.config.settings.ADMIN_API_KEY", "secret-key")
+    client = TestClient(app)
+
+    response = client.post("/api/v1/retrieve", json={"query": "vat rate", "top_k": 2})
+
+    assert response.status_code == 200
+    assert response.json()["contexts"] == [{"index": 1, "char_count": 9}, {"index": 2, "char_count": 9}]
+
+
+def test_context_disabled_returns_null_regardless_of_mode(monkeypatch):
+    monkeypatch.setattr("src.api.main.get_rag_engine", lambda: FakeRagEngine())
+    monkeypatch.setattr("src.api.main.get_answer_generator", lambda: FakeAnswerGenerator())
+    monkeypatch.setattr("src.core.config.settings.RETURN_CONTEXTS_IN_RESPONSE", False)
+    monkeypatch.setattr("src.core.config.settings.CONTEXT_RESPONSE_MODE", "full")
+    monkeypatch.setattr("src.core.config.settings.ENFORCE_ADMIN_AUTH", False)
+    client = TestClient(app)
+
+    response = client.post("/api/v1/retrieve", json={"query": "vat rate", "top_k": 2})
+
+    assert response.status_code == 200
+    assert response.json()["contexts"] is None
