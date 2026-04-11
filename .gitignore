@@ -1,5 +1,5 @@
 .env
-.taxtenv
+.venv
 *.md
 !README.md
 notes.md
