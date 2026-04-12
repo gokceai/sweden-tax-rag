@@ -47,24 +47,24 @@ class RAGEngine:
         return success_count
 
     def reconcile_indexes(self) -> dict:
-        """Find cross-store inconsistencies between Chroma and Dynamo."""
+        """Find cross-store inconsistencies between Chroma and SQLite."""
         chroma_ids = self.vector_db.list_ids()
-        dynamo_ids = self.document_repo.list_chunk_ids()
-        only_in_chroma = sorted(chroma_ids - dynamo_ids)
-        only_in_dynamo = sorted(dynamo_ids - chroma_ids)
+        document_store_ids = self.document_repo.list_chunk_ids()
+        only_in_chroma = sorted(chroma_ids - document_store_ids)
+        only_in_document_store = sorted(document_store_ids - chroma_ids)
         return {
             "total_chroma_ids": len(chroma_ids),
-            "total_dynamo_ids": len(dynamo_ids),
+            "total_document_store_ids": len(document_store_ids),
             "only_in_chroma": only_in_chroma,
-            "only_in_dynamo": only_in_dynamo,
-            "is_consistent": not only_in_chroma and not only_in_dynamo,
+            "only_in_document_store": only_in_document_store,
+            "is_consistent": not only_in_chroma and not only_in_document_store,
         }
 
     def repair_indexes(
         self,
         *,
         only_in_chroma_action: str = "mark_for_review",
-        only_in_dynamo_action: str = "mark_for_review",
+        only_in_document_store_action: str = "mark_for_review",
     ) -> dict:
         """Optionally repair inconsistencies after a reconciliation pass."""
         pre_report = self.reconcile_indexes()
@@ -72,19 +72,19 @@ class RAGEngine:
             "pre_reconcile": pre_report,
             "actions": {
                 "only_in_chroma_action": only_in_chroma_action,
-                "only_in_dynamo_action": only_in_dynamo_action,
+                "only_in_document_store_action": only_in_document_store_action,
             },
             "repaired": {
                 "only_in_chroma": [],
-                "only_in_dynamo": [],
+                "only_in_document_store": [],
             },
             "marked_for_review": {
                 "only_in_chroma": [],
-                "only_in_dynamo": [],
+                "only_in_document_store": [],
             },
             "failed": {
                 "only_in_chroma": [],
-                "only_in_dynamo": [],
+                "only_in_document_store": [],
             },
         }
 
@@ -98,26 +98,26 @@ class RAGEngine:
             else:
                 repair_result["marked_for_review"]["only_in_chroma"].append(chunk_id)
 
-        for chunk_id in pre_report["only_in_dynamo"]:
-            if only_in_dynamo_action == "delete":
+        for chunk_id in pre_report["only_in_document_store"]:
+            if only_in_document_store_action == "delete":
                 try:
                     self.document_repo.delete_document_chunk(chunk_id)
-                    repair_result["repaired"]["only_in_dynamo"].append(chunk_id)
+                    repair_result["repaired"]["only_in_document_store"].append(chunk_id)
                 except InfrastructureError:
-                    repair_result["failed"]["only_in_dynamo"].append(chunk_id)
-            elif only_in_dynamo_action == "rehydrate":
+                    repair_result["failed"]["only_in_document_store"].append(chunk_id)
+            elif only_in_document_store_action == "rehydrate":
                 chunk = self.document_repo.get_document_chunk(chunk_id)
                 chunk_text = chunk.get("decrypted_text") if chunk else None
                 if not chunk_text:
-                    repair_result["failed"]["only_in_dynamo"].append(chunk_id)
+                    repair_result["failed"]["only_in_document_store"].append(chunk_id)
                     continue
                 upserted = self.vector_db.add_or_update_vector(chunk_id, chunk_text)
                 if upserted:
-                    repair_result["repaired"]["only_in_dynamo"].append(chunk_id)
+                    repair_result["repaired"]["only_in_document_store"].append(chunk_id)
                 else:
-                    repair_result["failed"]["only_in_dynamo"].append(chunk_id)
+                    repair_result["failed"]["only_in_document_store"].append(chunk_id)
             else:
-                repair_result["marked_for_review"]["only_in_dynamo"].append(chunk_id)
+                repair_result["marked_for_review"]["only_in_document_store"].append(chunk_id)
 
         repair_result["post_reconcile"] = self.reconcile_indexes()
         return repair_result
@@ -138,7 +138,7 @@ class RAGEngine:
         return contexts
 
     def _rollback_chunk(self, chunk_id: str, *, vector_success: bool, db_success: bool) -> None:
-        """Compensate partial writes to keep Chroma and Dynamo in sync."""
+        """Compensate partial writes to keep Chroma and SQLite in sync."""
         if vector_success and not db_success:
             try:
                 self.vector_db.delete_vector(chunk_id)

@@ -31,8 +31,9 @@ def test_chroma_manager_uses_settings(monkeypatch):
         return FakeClient()
 
     class FakeEmbeddingFunction:
-        def __init__(self, model_name):
+        def __init__(self, model_name, device="cpu"):
             captured["embedding_model"] = model_name
+            captured["embedding_device"] = device
 
         def __call__(self, texts):
             return [[0.1, 0.2, 0.3] for _ in texts]
@@ -48,6 +49,7 @@ def test_chroma_manager_uses_settings(monkeypatch):
     assert manager.collection_name == settings.CHROMA_COLLECTION_NAME
     assert captured["persist_dir"] == settings.CHROMA_PERSIST_DIR
     assert captured["embedding_model"] == settings.EMBEDDING_MODEL
+    assert captured["embedding_device"] in {"cpu", "cuda"}
 
     assert manager.search_similar_ids("vat", 1) == ["chunk-1"]
     assert manager.has_vector("chunk-1") is True

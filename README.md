@@ -1,3 +1,13 @@
+---
+title: Sweden Tax RAG
+emoji: ⚖️
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Sweden Tax RAG Service
 
 A security-first Retrieval-Augmented Generation prototype for Swedish tax law.
@@ -142,6 +152,7 @@ Full list lives in [src/core/config.py](src/core/config.py). The critical ones:
 |---|---|
 | `MASTER_ENCRYPTION_KEY` | **Required.** Valid Fernet key. Missing → app refuses to start. |
 | `LLM_MODEL_PATH` | Path or HF repo ID loadable by `AutoModelForCausalLM`. |
+| `EMBEDDING_MODEL` / `EMBEDDING_DEVICE` | Embedding model and runtime device (`auto`, `cpu`, `cuda`). |
 | `LLM_MODEL_HOST_PATH` / `LLM_MODEL_CONTAINER_ROOT` / `LLM_MODEL_PATH_IN_CONTAINER` | Host ↔ container model path mapping for Docker. |
 | `ENFORCE_ADMIN_AUTH` / `ADMIN_API_KEY` | Gate ingest/reconcile/repair endpoints with `X-Admin-Key`. |
 | `RETURN_CONTEXTS_IN_RESPONSE` / `CONTEXT_RESPONSE_MODE` | Context exposure policy: `none`, `redacted` (index + char count), or `full` (admin-gated). |
@@ -221,7 +232,7 @@ Reconcile drift:
 curl http://localhost:8080/api/v1/reconcile
 curl -X POST http://localhost:8080/api/v1/reconcile/repair \
   -H "Content-Type: application/json" \
-  -d '{"only_in_chroma_action":"delete","only_in_dynamo_action":"rehydrate"}'
+  -d '{"only_in_chroma_action":"delete","only_in_document_store_action":"rehydrate"}'
 ```
 
 ## Dataset ingest pipeline
@@ -242,13 +253,41 @@ python src/pipelines/vector_ingest/pipeline_cli.py \
   --reset-chroma-collection
 ```
 
+## Adding new data
+
+### Option A: API ingest (single document)
+
+```bash
+curl -X POST http://localhost:8080/api/v1/ingest \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: <ADMIN_API_KEY>" \
+  -d '{"document_text":"...","source_name":"my_source.txt"}'
+```
+
+### Option B: Raw JSONL bulk ingest (`doc_id` + `text`)
+
+```bash
+python scripts/ingest_documents_jsonl.py \
+  --input documents.jsonl \
+  --reset-chroma-collection
+```
+
+### Option C: Pre-chunked JSONL bulk ingest (`chunk_id` present)
+
+```bash
+python src/pipelines/vector_ingest/pipeline_cli.py \
+  --input example-dataset/chunks.jsonl \
+  --apply \
+  --reset-chroma-collection
+```
+
 ## Observability
 
 `/metrics` exposes standard HTTP metrics **plus** RAG-specific ones:
 
 - `rag_retrieve_requests_total`, `rag_retrieve_duration_seconds`
 - `rag_ingest_requests_total`, `rag_ingest_chunks_total`, `rag_ingest_duration_seconds`
-- `rag_reconcile_runs_total`, `rag_reconcile_only_in_chroma`, `rag_reconcile_only_in_dynamo`, `rag_reconcile_is_consistent`
+- `rag_reconcile_runs_total`, `rag_reconcile_only_in_chroma`, `rag_reconcile_only_in_document_store`, `rag_reconcile_is_consistent`
 - `rag_repair_requests_total`, `rag_repair_duration_seconds`
 
 Alert rules ([monitoring/prometheus/alerts.yml](monitoring/prometheus/alerts.yml)): `HighApi5xxRate`, `HighApiP95Latency`, `GpuExporterDown`.
@@ -280,10 +319,11 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 ├── src/
 │   ├── api/           # FastAPI app, schemas, middleware, error envelope
 │   ├── core/          # config, DI factories, Fernet manager, typed exceptions
-│   ├── db/            # Chroma client, SQLite repo, migration-only Dynamo client
+│   ├── db/            # Chroma client, SQLite encrypted document repository
 │   ├── engine/        # RAG orchestration, LLM wrapper
 │   ├── frontend/      # Gradio app (retrieval-only)
 │   └── pipelines/     # Dataset ingest CLI (validate → normalize → precheck → ingest)
+├── scripts/           # Utility scripts (for example raw JSONL ingest)
 ├── tests/             # pytest suite (unit + integration marker)
 ├── monitoring/        # Prometheus, Grafana, Alertmanager, runbooks
 ├── docker/            # Local state volumes for Chroma + SQLite
@@ -292,9 +332,8 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 ├── .github/workflows/ # CI definitions
 ├── docker-compose.yml
 ├── Dockerfile
-├── AGENT.md           # Zero-memory onboarding guide for future contributors / AI agents (TR)
-├── TASKS.md           # Live roadmap + reality check (TR)
-└── NOTES.md           # Owner's personal interview notebook (TR) — do not edit
+├── SECURE_DEFAULTS.md # Security checklist before shared/production deployment
+└── todo.md            # Active task notes
 ```
 
 ## Security model (honest version)
@@ -305,18 +344,9 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 - The master key lives on the application host — so **this is at-rest protection, not end-to-end encryption.** If the process is compromised, the key is too. This is a deliberate tradeoff for a single-tenant prototype.
 - Admin-mutating endpoints are gated by `X-Admin-Key`. `CONTEXT_RESPONSE_MODE` decides whether the API is allowed to leak decrypted text back over the wire at all.
 
-## Roadmap
-
-See [TASKS.md](TASKS.md) for the tracked work, but in short:
-
-1. Decide whether Gradio stays retrieval-only or gains an admin-gated operator surface.
-2. Document a production secret-management strategy end-to-end.
-3. Add rate limiting in front of admin endpoints for shared deployments.
-
 ## License
 
 No license file yet. Add one before public distribution.
 
 ---
-
-<sub>Built as a prototype to explore split-storage RAG security patterns, not as a production-ready service. Read [AGENT.md](AGENT.md) before contributing.</sub>
+<sub>Built as a prototype to explore split-storage RAG security patterns, not as a production-ready service.</sub>

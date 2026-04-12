@@ -1,13 +1,34 @@
-.git
-.gitignore
-.taxtenv
+# Secrets — must never be baked into the image
+.env
+*.key
+*.pem
+
+# Runtime data volumes (mounted at container start, not part of build)
+docker/chroma_data/
+docker/documents.db
+docker/dynamodb_data/
+docker/llm_models/
+
+# Python artifacts
+.venv/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Test / dev tooling
 .pytest_cache/
-docker/chroma_data/
-docker/dynamodb_data/
+.ruff_cache/
+tests/
+
+# Git
+.git/
+
+# Personal / internal notes (not needed in image)
+NOTES.md
 notes.md
 description.md
 phases_progress.md
 ADVICE.md
-agent.md

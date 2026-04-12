@@ -54,8 +54,6 @@ jobs:
               "src.engine.rag_core",
               "src.db.chroma_client",
               "src.db.sqlite_document_repo",
-              "src.db.document_repo",
-              "src.db.dynamo_client",
               "src.frontend.app",
           ]
           for name in modules:

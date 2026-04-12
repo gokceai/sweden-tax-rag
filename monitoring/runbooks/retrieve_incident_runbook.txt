@@ -7,12 +7,12 @@
 2) Check readiness and deep health
 - GET /health/ready
 - GET /health/deep
-- If 503, inspect checks.vector_db / checks.dynamo_db fields.
+- If 503, inspect checks.vector_db / checks.document_store fields.
 
 3) Validate dependencies
-- Chroma: reachable on configured host/port
-- Dynamo: reachable on configured endpoint and table exists
-- Check env vars: CHROMA_HOST, CHROMA_PORT, DYNAMO_ENDPOINT, MASTER_ENCRYPTION_KEY
+- Chroma: storage path exists and is writable (`CHROMA_PERSIST_DIR`)
+- SQLite: db file path exists and is writable (`SQLITE_DB_PATH`)
+- Check env vars: CHROMA_PERSIST_DIR, SQLITE_DB_PATH, MASTER_ENCRYPTION_KEY
 
 4) Inspect metrics
 - /metrics should include:
@@ -22,8 +22,8 @@
 - Check 5xx spike and latency p95 in Grafana.
 
 5) Common fixes
-- Chroma connection errors: restart chroma container, verify mount path and collection config
-- Dynamo connection errors: restart dynamodb-local, verify endpoint and credentials
+- Chroma initialization errors: verify persist path mount and collection settings
+- SQLite errors: verify db file permissions and mount path
 - Encryption errors: ensure MASTER_ENCRYPTION_KEY is valid Fernet key
 
 6) Validate recovery

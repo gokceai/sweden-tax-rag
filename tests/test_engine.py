@@ -52,7 +52,7 @@ def test_ingest_success_counts_chunks():
     assert count > 0
 
 
-def test_ingest_rolls_back_when_dynamo_write_fails():
+def test_ingest_rolls_back_when_document_store_write_fails():
     vector_db = FakeVectorDB(add_result=True)
     repo = FakeDocumentRepo(save_result=False)
     engine = RAGEngine(vector_db=vector_db, document_repo=repo, settings=settings)
@@ -104,7 +104,7 @@ def test_reconcile_indexes_reports_orphans():
 
     assert result["is_consistent"] is False
     assert result["only_in_chroma"] == ["chunk-1"]
-    assert result["only_in_dynamo"] == ["chunk-3"]
+    assert result["only_in_document_store"] == ["chunk-3"]
 
 
 def test_repair_indexes_delete_and_rehydrate():
@@ -114,10 +114,10 @@ def test_repair_indexes_delete_and_rehydrate():
 
     result = engine.repair_indexes(
         only_in_chroma_action="delete",
-        only_in_dynamo_action="rehydrate",
+        only_in_document_store_action="rehydrate",
     )
 
     assert result["actions"]["only_in_chroma_action"] == "delete"
-    assert result["actions"]["only_in_dynamo_action"] == "rehydrate"
+    assert result["actions"]["only_in_document_store_action"] == "rehydrate"
     assert result["repaired"]["only_in_chroma"] == ["chunk-1"]
-    assert result["repaired"]["only_in_dynamo"] == ["chunk-3"]
+    assert result["repaired"]["only_in_document_store"] == ["chunk-3"]

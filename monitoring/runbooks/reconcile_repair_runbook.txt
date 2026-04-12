@@ -1,14 +1,14 @@
-﻿Sweden Tax RAG Incident Runbook: Chroma/Dynamo Drift
+﻿Sweden Tax RAG Incident Runbook: Chroma/Document Store Drift
 
 1) Detect drift
 - GET /api/v1/reconcile (admin key if enforced)
-- Review only_in_chroma and only_in_dynamo arrays
+- Review only_in_chroma and only_in_document_store arrays
 
 2) Choose safe repair strategy
 - only_in_chroma_action:
   - delete (recommended)
   - mark_for_review
-- only_in_dynamo_action:
+- only_in_document_store_action:
   - rehydrate (recommended)
   - delete
   - mark_for_review
@@ -18,17 +18,17 @@
 - Body example:
   {
     "only_in_chroma_action": "delete",
-    "only_in_dynamo_action": "rehydrate"
+    "only_in_document_store_action": "rehydrate"
   }
 
 4) Validate post-state
 - GET /api/v1/reconcile/last
 - is_consistent should be true
-- only_in_chroma and only_in_dynamo should be empty
+- only_in_chroma and only_in_document_store should be empty
 
 5) Watch metrics
 - rag_reconcile_only_in_chroma
-- rag_reconcile_only_in_dynamo
+- rag_reconcile_only_in_document_store
 - rag_reconcile_is_consistent
 
 6) Prevent recurrence

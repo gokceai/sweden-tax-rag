@@ -1,10 +1,8 @@
 """
-SQLiteDocumentRepository — drop-in replacement for DynamoDB-backed DocumentRepository.
+SQLiteDocumentRepository for encrypted chunk storage.
 
 Design decisions:
-- Interface is intentionally identical to DocumentRepository so no other layer needs
-  to know which backend is active.
-- Fernet encryption/decryption happens here, same as the DynamoDB version.
+- Fernet encryption/decryption happens in this repository layer.
 - Thread safety: a per-instance Lock guards every sqlite3 call. Connections are opened
   per-operation (safest pattern for multi-threaded use without a connection pool).
 - Schema uses INSERT OR REPLACE (UPSERT) so ingest remains idempotent.

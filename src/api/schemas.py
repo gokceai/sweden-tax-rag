@@ -16,7 +16,7 @@ class ReconcileRepairRequest(BaseModel):
         "mark_for_review",
         description="How to handle IDs existing only in Chroma.",
     )
-    only_in_dynamo_action: Literal["rehydrate", "delete", "mark_for_review"] = Field(
+    only_in_document_store_action: Literal["rehydrate", "delete", "mark_for_review"] = Field(
         "mark_for_review",
-        description="How to handle IDs existing only in Dynamo.",
+        description="How to handle IDs existing only in the document store (SQLite).",
     )

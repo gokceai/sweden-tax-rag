@@ -1,17 +1,34 @@
 FROM python:3.12-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential git curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt pyproject.toml ./
+
+# requirements.txt is UTF-16 LE encoded; convert to UTF-8 before pip reads it.
+RUN python -c "
+import pathlib
+p = pathlib.Path('requirements.txt')
+p.write_text(p.read_text(encoding='utf-16'), encoding='utf-8')
+" && \
+    pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+COPY src ./src
 RUN pip install --no-cache-dir -e .
 
-COPY . .
+# HuggingFace Spaces runs containers as UID 1000.
+# Pre-create /data so the app can write chroma + sqlite there.
+RUN mkdir -p /data && useradd -m -u 1000 appuser && chown -R appuser /data /app
+USER 1000
 
+# Persistent storage mount point (set in HF Space settings: /data)
 ENV CHROMA_PERSIST_DIR=/data/chroma
 ENV SQLITE_DB_PATH=/data/documents.db
 

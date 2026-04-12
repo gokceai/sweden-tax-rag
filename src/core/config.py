@@ -19,16 +19,8 @@ class Settings:
     CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "swedish_tax_vectors")
     CHROMA_DISTANCE = os.getenv("CHROMA_DISTANCE", "cosine")
 
-    # SQLite encrypted document store (replaces DynamoDB Local)
+    # SQLite encrypted document store
     SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "./docker/documents.db")
-
-    # DynamoDB settings kept only for the one-time migration script (migrate_dynamo_to_sqlite.py).
-    # Remove after migration is complete.
-    DYNAMO_ENDPOINT = os.getenv("DYNAMO_ENDPOINT", "http://localhost:8000")
-    DYNAMO_REGION = os.getenv("DYNAMO_REGION", "eu-north-1")
-    DYNAMO_TABLE_NAME = os.getenv("DYNAMO_TABLE_NAME", "SwedishTaxDocuments")
-    DYNAMO_ACCESS_KEY_ID = os.getenv("DYNAMO_ACCESS_KEY_ID", "test")
-    DYNAMO_SECRET_ACCESS_KEY = os.getenv("DYNAMO_SECRET_ACCESS_KEY", "test")
 
     # Security
     MASTER_ENCRYPTION_KEY = os.getenv("MASTER_ENCRYPTION_KEY")
@@ -50,6 +42,7 @@ class Settings:
     # AI and RAG settings
     LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "meta-llama/Llama-3.2-1B-Instruct")
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "auto").lower()
     CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 400))
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 50))
     LLM_MAX_NEW_TOKENS = int(os.getenv("LLM_MAX_NEW_TOKENS", 250))

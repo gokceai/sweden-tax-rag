@@ -14,33 +14,33 @@ class FakeRagEngine:
     def reconcile_indexes(self):
         return {
             "total_chroma_ids": 2,
-            "total_dynamo_ids": 2,
+            "total_document_store_ids": 2,
             "only_in_chroma": [],
-            "only_in_dynamo": [],
+            "only_in_document_store": [],
             "is_consistent": True,
         }
 
-    def repair_indexes(self, only_in_chroma_action, only_in_dynamo_action):
+    def repair_indexes(self, only_in_chroma_action, only_in_document_store_action):
         return {
             "pre_reconcile": {
                 "total_chroma_ids": 2,
-                "total_dynamo_ids": 2,
+                "total_document_store_ids": 2,
                 "only_in_chroma": ["c1"],
-                "only_in_dynamo": ["d1"],
+                "only_in_document_store": ["d1"],
                 "is_consistent": False,
             },
             "actions": {
                 "only_in_chroma_action": only_in_chroma_action,
-                "only_in_dynamo_action": only_in_dynamo_action,
+                "only_in_document_store_action": only_in_document_store_action,
             },
-            "repaired": {"only_in_chroma": ["c1"], "only_in_dynamo": ["d1"]},
-            "marked_for_review": {"only_in_chroma": [], "only_in_dynamo": []},
-            "failed": {"only_in_chroma": [], "only_in_dynamo": []},
+            "repaired": {"only_in_chroma": ["c1"], "only_in_document_store": ["d1"]},
+            "marked_for_review": {"only_in_chroma": [], "only_in_document_store": []},
+            "failed": {"only_in_chroma": [], "only_in_document_store": []},
             "post_reconcile": {
                 "total_chroma_ids": 2,
-                "total_dynamo_ids": 2,
+                "total_document_store_ids": 2,
                 "only_in_chroma": [],
-                "only_in_dynamo": [],
+                "only_in_document_store": [],
                 "is_consistent": True,
             },
         }
@@ -101,7 +101,7 @@ def test_repair_endpoint(monkeypatch):
         "/api/v1/reconcile/repair",
         json={
             "only_in_chroma_action": "delete",
-            "only_in_dynamo_action": "rehydrate",
+            "only_in_document_store_action": "rehydrate",
         },
     )
 

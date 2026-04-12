@@ -13,8 +13,9 @@ from src.engine.rag_core import RAGEngine
 @pytest.mark.integration
 def test_reconcile_and_repair_with_real_stores(monkeypatch, tmp_path):
     class FakeEmbeddingFunction:
-        def __init__(self, model_name):
+        def __init__(self, model_name, device="cpu"):
             self.model_name = model_name
+            self.device = device
 
         def __call__(self, input):
             return [[0.1, 0.2, 0.3] for _ in input]
@@ -40,32 +41,32 @@ def test_reconcile_and_repair_with_real_stores(monkeypatch, tmp_path):
     engine = RAGEngine(vector_db=vector_db, document_repo=document_repo, settings=settings)
 
     only_in_chroma_id = f"it_only_in_chroma_{uuid.uuid4().hex[:10]}"
-    only_in_dynamo_id = f"it_only_in_dynamo_{uuid.uuid4().hex[:10]}"
+    only_in_document_store_id = f"it_only_in_document_store_{uuid.uuid4().hex[:10]}"
 
     try:
         assert vector_db.add_or_update_vector(only_in_chroma_id, "Temporary orphan vector")
         assert document_repo.save_document_chunk(
-            only_in_dynamo_id,
+            only_in_document_store_id,
             "Temporary orphan document",
             {"source": "integration_test", "chunk_index": 0},
         )
 
         before = engine.reconcile_indexes()
         assert only_in_chroma_id in before["only_in_chroma"]
-        assert only_in_dynamo_id in before["only_in_dynamo"]
+        assert only_in_document_store_id in before["only_in_document_store"]
 
         repaired = engine.repair_indexes(
             only_in_chroma_action="delete",
-            only_in_dynamo_action="rehydrate",
+            only_in_document_store_action="rehydrate",
         )
         after = repaired["post_reconcile"]
 
         assert only_in_chroma_id not in after["only_in_chroma"]
-        assert only_in_dynamo_id not in after["only_in_dynamo"]
-        assert vector_db.has_vector(only_in_dynamo_id) is True
-        assert document_repo.has_document_chunk(only_in_dynamo_id) is True
+        assert only_in_document_store_id not in after["only_in_document_store"]
+        assert vector_db.has_vector(only_in_document_store_id) is True
+        assert document_repo.has_document_chunk(only_in_document_store_id) is True
     finally:
         vector_db.delete_vector(only_in_chroma_id)
-        vector_db.delete_vector(only_in_dynamo_id)
+        vector_db.delete_vector(only_in_document_store_id)
         document_repo.delete_document_chunk(only_in_chroma_id)
-        document_repo.delete_document_chunk(only_in_dynamo_id)
+        document_repo.delete_document_chunk(only_in_document_store_id)

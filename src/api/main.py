@@ -100,9 +100,9 @@ RAG_RECONCILE_ONLY_IN_CHROMA = Gauge(
     "rag_reconcile_only_in_chroma",
     "Current count of chunk IDs present only in Chroma",
 )
-RAG_RECONCILE_ONLY_IN_DYNAMO = Gauge(
-    "rag_reconcile_only_in_dynamo",
-    "Current count of chunk IDs present only in Dynamo",
+RAG_RECONCILE_ONLY_IN_DOCUMENT_STORE = Gauge(
+    "rag_reconcile_only_in_document_store",
+    "Current count of chunk IDs present only in the document store (SQLite)",
 )
 RAG_RECONCILE_IS_CONSISTENT = Gauge(
     "rag_reconcile_is_consistent",
@@ -111,7 +111,7 @@ RAG_RECONCILE_IS_CONSISTENT = Gauge(
 RAG_REPAIR_REQUESTS_TOTAL = Counter(
     "rag_repair_requests_total",
     "Total repair requests by outcome and actions",
-    ["outcome", "only_in_chroma_action", "only_in_dynamo_action"],
+    ["outcome", "only_in_chroma_action", "only_in_document_store_action"],
 )
 RAG_REPAIR_DURATION_SECONDS = Histogram(
     "rag_repair_duration_seconds",
@@ -355,9 +355,9 @@ def metrics():
 def _record_reconcile_metrics(report: dict, *, source: str, outcome: str):
     RAG_RECONCILE_RUNS_TOTAL.labels(source=source, outcome=outcome).inc()
     only_in_chroma = report.get("only_in_chroma", [])
-    only_in_dynamo = report.get("only_in_dynamo", [])
+    only_in_document_store = report.get("only_in_document_store", [])
     RAG_RECONCILE_ONLY_IN_CHROMA.set(len(only_in_chroma))
-    RAG_RECONCILE_ONLY_IN_DYNAMO.set(len(only_in_dynamo))
+    RAG_RECONCILE_ONLY_IN_DOCUMENT_STORE.set(len(only_in_document_store))
     RAG_RECONCILE_IS_CONSISTENT.set(1 if report.get("is_consistent") else 0)
 
 
@@ -475,7 +475,7 @@ def retrieve_and_generate(request: QueryRequest, raw_request: Request):
         RAG_RETRIEVE_DURATION_SECONDS.labels(outcome=outcome).observe(duration_s)
 
 
-@app.get("/api/v1/reconcile", summary="Check Chroma and Dynamo consistency")
+@app.get("/api/v1/reconcile", summary="Check Chroma and SQLite consistency")
 def reconcile_storage(
     raw_request: Request,
     _: None = Depends(require_admin_access),
@@ -540,7 +540,7 @@ def get_last_reconcile_result(
     return result
 
 
-@app.post("/api/v1/reconcile/repair", summary="Repair Chroma/Dynamo inconsistencies")
+@app.post("/api/v1/reconcile/repair", summary="Repair Chroma/SQLite inconsistencies")
 def repair_storage(
     request: ReconcileRepairRequest,
     raw_request: Request,
@@ -552,7 +552,7 @@ def repair_storage(
         rag_engine = get_rag_engine()
         repair_report = rag_engine.repair_indexes(
             only_in_chroma_action=request.only_in_chroma_action,
-            only_in_dynamo_action=request.only_in_dynamo_action,
+            only_in_document_store_action=request.only_in_document_store_action,
         )
         outcome = "success"
         post_reconcile = repair_report.get("post_reconcile", {})
@@ -599,6 +599,6 @@ def repair_storage(
         RAG_REPAIR_REQUESTS_TOTAL.labels(
             outcome=outcome,
             only_in_chroma_action=request.only_in_chroma_action,
-            only_in_dynamo_action=request.only_in_dynamo_action,
+            only_in_document_store_action=request.only_in_document_store_action,
         ).inc()
         RAG_REPAIR_DURATION_SECONDS.labels(outcome=outcome).observe(duration_s)
