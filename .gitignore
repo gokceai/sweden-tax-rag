@@ -12,5 +12,4 @@ docker/llm_models/
 *.egg-info/
 dist/
 build/
-scripts/ingest_documents_jsonl.py
 SECURE_DEFAULTS.md

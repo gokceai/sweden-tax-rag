@@ -6,6 +6,7 @@ colorTo: green
 sdk: docker
 app_port: 7860
 pinned: false
+license: apache-2.0
 ---
 
 # Sweden Tax RAG Service
@@ -18,7 +19,7 @@ A security-first Retrieval-Augmented Generation prototype for Swedish tax law.
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-vector-4B0082)
 ![SQLite](https://img.shields.io/badge/SQLite-encrypted-003B57)
 ![Prometheus](https://img.shields.io/badge/Prometheus-observability-E6522C)
-![license](https://img.shields.io/badge/license-TBD-lightgrey)
+![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 ---
 
@@ -118,6 +119,18 @@ Stop the stack with `docker compose down` (or `docker compose down -v` to wipe l
 > ```bash
 > docker info | grep -Ei 'runtimes|nvidia'
 > ```
+
+## Public demo card
+
+Use this as the single-source summary for a public GitHub/Hugging Face demo.
+
+| Topic | Public demo guidance |
+|---|---|
+| Public endpoints | Intended public surface: `POST /api/v1/retrieve` (main user flow), `GET /`, `GET /health/live`, `GET /health/ready`. The Gradio UI calls only retrieval. |
+| Admin endpoint policy | Keep `ENFORCE_ADMIN_AUTH=true` for public deployments. `POST /api/v1/ingest`, `GET /api/v1/reconcile`, `GET /api/v1/reconcile/last`, and `POST /api/v1/reconcile/repair` must require `X-Admin-Key`. Never expose `ADMIN_API_KEY` in frontend code or client-visible config. |
+| First-run model download | If `LLM_MODEL_PATH` is a Hugging Face repo ID (default: `meta-llama/Llama-3.2-1B-Instruct`), first retrieval triggers a one-time model download. Typical cold-start is about 2-15 minutes depending on network, disk speed, and model size. |
+| CPU response time (approx.) | After warm-up, short retrieval questions are typically around 3-15 seconds on a modern desktop CPU with the default 1B model. Slower CPUs, longer contexts, or higher `top_k` can increase latency. |
+| Demo dataset | This repo does not ship a production legal corpus by default. For demos, ingest your own non-sensitive JSONL sample (for example via `scripts/ingest_documents_jsonl.py` or the pre-chunked pipeline) and document the data source in the Space card/README. |
 
 ## Quick start (local, no Docker)
 
@@ -267,8 +280,11 @@ curl -X POST http://localhost:8080/api/v1/ingest \
 ```bash
 python scripts/ingest_documents_jsonl.py \
   --input documents.jsonl \
-  --reset-chroma-collection
+  --reset-all \
+  --fail-on-skip
 ```
+
+Use `--reset-all` when replacing a dataset end-to-end, so Chroma and SQLite stay in sync.
 
 ### Option C: Pre-chunked JSONL bulk ingest (`chunk_id` present)
 
@@ -352,7 +368,7 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 
 ## License
 
-No license file yet. Add one before public distribution.
+Licensed under the Apache License 2.0. See [`LICENSE`](LICENSE).
 
 ---
 <sub>Built as a prototype to explore split-storage RAG security patterns, not as a production-ready service.</sub>
