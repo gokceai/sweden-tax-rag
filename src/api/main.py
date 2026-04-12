@@ -30,6 +30,20 @@ async def lifespan(app: FastAPI):
     app.state.last_reconcile_result = None
     app.state.reconcile_stop_event = threading.Event()
     app.state.reconcile_thread = None
+    app.state.llm_warmup_thread = None
+
+    if settings.LLM_EAGER_LOAD:
+        def _warmup_llm():
+            try:
+                logger.info("LLM warmup starting in background thread...")
+                get_answer_generator().load()
+                logger.info("LLM warmup complete.")
+            except Exception as exc:
+                logger.error("LLM warmup failed: %s", exc)
+
+        warmup_thread = threading.Thread(target=_warmup_llm, daemon=True, name="llm-warmup")
+        warmup_thread.start()
+        app.state.llm_warmup_thread = warmup_thread
 
     if settings.RECONCILE_AUTORUN:
         worker = threading.Thread(
@@ -283,8 +297,8 @@ def _run_scheduled_reconcile(stop_event: threading.Event):
         stop_event.wait(settings.RECONCILE_INTERVAL_SECONDS)
 
 
-@app.get("/")
-def health_check():
+@app.get("/ping", include_in_schema=False)
+def ping():
     return {"status": "ACTIVE", "service": settings.PROJECT_NAME}
 
 
@@ -298,6 +312,7 @@ def health_ready():
     checks = {
         "vector_db": {"ok": False, "message": None},
         "document_store": {"ok": False, "message": None},
+        "llm": {"ok": False, "message": None},
     }
     overall_ok = True
 
@@ -318,6 +333,21 @@ def health_ready():
         overall_ok = False
         checks["document_store"]["message"] = "unavailable"
         logger.warning("Ready check failed for document_store: %s", e)
+
+    try:
+        generator = get_answer_generator()
+        if generator.is_ready:
+            checks["llm"]["ok"] = True
+        elif generator.has_error:
+            checks["llm"]["message"] = "load_failed"
+            overall_ok = False
+            logger.warning("Ready check: LLM failed to load.")
+        else:
+            checks["llm"]["message"] = "loading"
+            # Still warming up — informational only, does not block readiness
+    except Exception as e:
+        checks["llm"]["message"] = "unavailable"
+        logger.warning("Ready check failed for llm: %s", e)
 
     payload = {"status": "ok" if overall_ok else "degraded", "mode": "ready", "checks": checks}
     if overall_ok:
@@ -610,3 +640,13 @@ def repair_storage(
             only_in_document_store_action=request.only_in_document_store_action,
         ).inc()
         RAG_REPAIR_DURATION_SECONDS.labels(outcome=outcome).observe(duration_s)
+
+
+# ---------------------------------------------------------------------------
+# Gradio UI — mounted at "/" so HF Spaces shows the UI on the root path.
+# API routes defined above (/api/v1/*, /health/*, /metrics) take precedence.
+# ---------------------------------------------------------------------------
+import gradio as gr  # noqa: E402
+from src.frontend.app import app as _gradio_demo  # noqa: E402
+
+gr.mount_gradio_app(app, _gradio_demo, path="/")

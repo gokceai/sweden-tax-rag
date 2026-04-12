@@ -6,43 +6,23 @@ services:
     container_name: sweden-tax-api
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8080:7860"
     env_file:
       - .env
     environment:
       - CHROMA_PERSIST_DIR=/app/docker/chroma_data
       - SQLITE_DB_PATH=/app/docker/documents.db
       - LLM_MODEL_PATH=${LLM_MODEL_PATH_IN_CONTAINER:-${LLM_MODEL_PATH}}
+      # Local docker-compose: API and UI share port 7860 inside container,
+      # exposed as 8080 on the host. API_BASE_URL points back to the same port.
+      - API_BASE_URL=http://localhost:7860/api/v1
     volumes:
       - ./docker:/app/docker
       - ${LLM_MODEL_HOST_PATH:-./docker/llm_models}:${LLM_MODEL_CONTAINER_ROOT:-/models}:ro
     cpus: ${API_CPUS_LIMIT:-4.0}
-    mem_limit: ${API_MEM_LIMIT:-6g}
+    mem_limit: ${API_MEM_LIMIT:-10g}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/').read()"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: sweden-tax-frontend
-    restart: unless-stopped
-    command: python src/frontend/app.py
-    ports:
-      - "8501:8501"
-    env_file:
-      - .env
-    environment:
-      - API_BASE_URL=http://api:8080/api/v1
-    depends_on:
-      - api
-    profiles:
-      - ui
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/').read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860/health/live').read()"]
       interval: 30s
       timeout: 5s
       retries: 5

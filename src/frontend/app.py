@@ -45,25 +45,50 @@ button.primary {
 """
 
 
+def _candidate_api_urls() -> list[str]:
+    """Try configured URL first; fall back to localhost variants for same-container setups."""
+    urls = [API_URL.rstrip("/")]
+    # docker-compose: api service hostname
+    if "://api:" in API_URL:
+        urls.append("http://localhost:8080/api/v1")
+    # HF Spaces / single-container: Gradio and API share the same uvicorn process
+    for port in (7860, 8080):
+        candidate = f"http://localhost:{port}/api/v1"
+        if candidate not in urls:
+            urls.append(candidate)
+    return list(dict.fromkeys(urls))
+
+
 def ask_question(question: str) -> tuple[str, str]:
     prompt = (question or "").strip()
     if len(prompt) < 5:
         return "", "Question must be at least 5 characters."
 
-    try:
-        response = requests.post(
-            f"{API_URL}/retrieve",
-            json={"query": prompt, "top_k": 2},
-            timeout=90,
-        )
-    except requests.RequestException as exc:
-        return "", f"API connection error: {exc}"
+    response = None
+    last_error = None
+    for base_url in _candidate_api_urls():
+        try:
+            response = requests.post(
+                f"{base_url}/retrieve",
+                json={"query": prompt, "top_k": 2},
+                timeout=300,
+            )
+            break
+        except requests.RequestException as exc:
+            last_error = exc
+
+    if response is None:
+        return "", f"API connection error: {last_error}"
 
     if response.status_code != 200:
         return "", f"Request failed ({response.status_code})."
 
     payload = response.json()
     return payload.get("answer", ""), ""
+
+
+def _set_inputs_enabled(enabled: bool):
+    return gr.update(interactive=enabled), gr.update(interactive=enabled)
 
 
 def build_app() -> gr.Blocks:
@@ -82,8 +107,15 @@ def build_app() -> gr.Blocks:
         answer = gr.Markdown(label="Answer")
         error = gr.Markdown(label="Status")
 
-        ask_btn.click(ask_question, inputs=[question], outputs=[answer, error])
-        question.submit(ask_question, inputs=[question], outputs=[answer, error])
+        def bind_query_event(event):
+            return (
+                event(fn=lambda: _set_inputs_enabled(False), outputs=[ask_btn, question], queue=False)
+                .then(ask_question, inputs=[question], outputs=[answer, error])
+                .then(fn=lambda: _set_inputs_enabled(True), outputs=[ask_btn, question], queue=False)
+            )
+
+        bind_query_event(ask_btn.click)
+        bind_query_event(question.submit)
 
     return demo
 
@@ -92,4 +124,4 @@ app = build_app()
 
 
 if __name__ == "__main__":
-    app.launch(server_name="0.0.0.0", server_port=8501, show_api=False)
+    app.launch(server_name="0.0.0.0", server_port=8501)

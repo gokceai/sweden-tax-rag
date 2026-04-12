@@ -1,7 +1,6 @@
 import chromadb
 from chromadb.utils import embedding_functions
 import logging
-import torch
 from src.core.config import settings
 from src.core.exceptions import InfrastructureError
 
@@ -13,9 +12,7 @@ class VectorDBManager:
             self.client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
         except Exception as e:
             raise InfrastructureError(f"ChromaDB initialization failed: {e}") from e
-        embedding_device = settings.EMBEDDING_DEVICE
-        if embedding_device == "auto":
-            embedding_device = "cuda" if torch.cuda.is_available() else "cpu"
+        embedding_device = settings.resolve_device(settings.EMBEDDING_DEVICE)
         self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=settings.EMBEDDING_MODEL,
             device=embedding_device,

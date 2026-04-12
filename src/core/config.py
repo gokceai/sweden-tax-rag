@@ -11,7 +11,8 @@ class Settings:
     PROJECT_DESCRIPTION = "RAG engine with encryption for Swedish tax laws."
 
     # Network and port settings
-    API_PORT = int(os.getenv("API_PORT", 8080))
+    # Default 7860 matches HF Spaces. Override to 8080 for local-only Docker.
+    API_PORT = int(os.getenv("API_PORT", 7860))
     API_BASE_URL = os.getenv("API_BASE_URL", f"http://localhost:{API_PORT}/api/v1")
 
     # Database settings
@@ -43,10 +44,26 @@ class Settings:
     LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "meta-llama/Llama-3.2-1B-Instruct")
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
     EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "auto").lower()
+    LLM_DEVICE = os.getenv("LLM_DEVICE", "auto").lower()
     CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 400))
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 50))
     LLM_MAX_NEW_TOKENS = int(os.getenv("LLM_MAX_NEW_TOKENS", 250))
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1))
+    # Load model at startup instead of on first request (default: true)
+    LLM_EAGER_LOAD = os.getenv("LLM_EAGER_LOAD", "true").lower() == "true"
+    # 8-bit quantization via bitsandbytes — reduces GPU memory ~50%, requires CUDA
+    LLM_USE_INT8 = os.getenv("LLM_USE_INT8", "false").lower() == "true"
+
+    @staticmethod
+    def resolve_device(preference: str = "auto") -> str:
+        """Resolve 'auto' / 'cpu' / 'cuda' to an actual device string."""
+        if preference in ("cpu", "cuda", "mps"):
+            return preference
+        try:
+            import torch  # noqa: PLC0415
+            return "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            return "cpu"
 
     # LLM main prompt
     SYSTEM_PROMPT = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
