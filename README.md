@@ -13,6 +13,18 @@ license: apache-2.0
 
 A security-first Retrieval-Augmented Generation prototype for Swedish tax law.
 
+## Positioning
+
+**What this project is**
+- A single-tenant, security-oriented RAG reference implementation.
+- A public demo base that shows split storage (vectors vs encrypted text), admin-gated operations, and observability.
+- A practical engineering prototype for local Docker or Hugging Face Spaces deployment.
+
+**What this project is not**
+- Not a turnkey production SaaS platform.
+- Not a multi-tenant architecture with full key management isolation.
+- Not a substitute for legal advice or an authoritative legal source.
+
 ![status](https://img.shields.io/badge/status-prototype-orange)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-async-009688)
@@ -131,6 +143,18 @@ Use this as the single-source summary for a public GitHub/Hugging Face demo.
 | First-run model download | If `LLM_MODEL_PATH` is a Hugging Face repo ID (default: `meta-llama/Llama-3.2-1B-Instruct`), first retrieval triggers a one-time model download. Typical cold-start is about 2-15 minutes depending on network, disk speed, and model size. |
 | CPU response time (approx.) | After warm-up, short retrieval questions are typically around 3-15 seconds on a modern desktop CPU with the default 1B model. Slower CPUs, longer contexts, or higher `top_k` can increase latency. |
 | Demo dataset | This repo does not ship a production legal corpus by default. For demos, ingest your own non-sensitive JSONL sample (for example via `scripts/ingest_documents_jsonl.py` or the pre-chunked pipeline) and document the data source in the Space card/README. |
+
+## Public deployment security policy
+
+Use this section as the baseline policy for public GitHub/Hugging Face deployments.
+
+| Policy area | Required policy |
+|---|---|
+| Secrets exposure policy | Keep all secrets in environment variables/Space secrets only (`MASTER_ENCRYPTION_KEY`, `ADMIN_API_KEY`). Never hardcode or expose them in frontend code, logs, screenshots, or example curl output. |
+| Admin gating | Set `ENFORCE_ADMIN_AUTH=true` and require `X-Admin-Key` for all mutating/admin routes. Keep admin operations off the public UI. |
+| Ingest policy (public) | Default to ingest closed for anonymous users. If ingest must be enabled, keep it admin-only and rate-limited; never allow untrusted public uploads without additional validation and moderation controls. |
+| Persistent storage implications | With persistent volumes enabled, vectors and encrypted text survive restarts. Without persistence, data resets on container/Space restart and must be re-ingested. |
+| Demo-only data policy | Use only non-sensitive, redistributable demo data. Do not ingest personal, confidential, or licensed-restricted corpora into public demos. |
 
 ## Quick start (local, no Docker)
 
