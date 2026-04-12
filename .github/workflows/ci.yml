@@ -50,8 +50,8 @@ jobs:
 
       - name: Validate Prometheus config and rules
         run: |
-          docker run --rm -v "${{ github.workspace }}/monitoring/prometheus:/etc/prometheus:ro" prom/prometheus:latest promtool check config /etc/prometheus/prometheus.yml
-          docker run --rm -v "${{ github.workspace }}/monitoring/prometheus:/etc/prometheus:ro" prom/prometheus:latest promtool check rules /etc/prometheus/alerts.yml
+          docker run --rm --entrypoint=/bin/promtool -v "${{ github.workspace }}/monitoring/prometheus:/etc/prometheus:ro" prom/prometheus:latest check config /etc/prometheus/prometheus.yml
+          docker run --rm --entrypoint=/bin/promtool -v "${{ github.workspace }}/monitoring/prometheus:/etc/prometheus:ro" prom/prometheus:latest check rules /etc/prometheus/alerts.yml
 
       - name: Import smoke
         run: |
