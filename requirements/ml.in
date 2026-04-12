@@ -1,8 +1,6 @@
 # Model and embedding stack
---extra-index-url https://download.pytorch.org/whl/cu118
-torch==2.2.2+cu118; platform_system == "Linux"
-torch==2.2.2; platform_system != "Linux"
-transformers
-sentence-transformers
-# Optional: 8-bit quantization (LLM_USE_INT8=true). CUDA-only, Linux only.
-bitsandbytes>=0.43.0; platform_system == "Linux"
+# CPU-only build for HuggingFace Spaces. No CUDA index needed.
+# These exact versions are verified to work together (tested locally).
+torch==2.5.1
+transformers==5.5.0
+sentence-transformers==5.3.0
