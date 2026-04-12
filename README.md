@@ -84,8 +84,6 @@ ChromaDB   SQLite            Transformers    Local Llama
 | Observability | Prometheus, Grafana, Alertmanager, optional NVIDIA DCGM exporter |
 | CI | GitHub Actions (`ruff`, `pytest`, `promtool`) |
 
-> Heads up: `requirements.txt` is UTF-16 LE encoded. Keep that encoding when editing or CI and Docker build will both fail loudly.
-
 ## Quick start (Docker)
 
 ```bash
@@ -311,6 +309,16 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 - `pytest -m "not integration"`
 - Monitoring smoke subset (`-k "metrics or health"`)
 - Optional integration + compose smoke jobs on `workflow_dispatch`
+
+## Dependency workflow
+
+- `requirements.txt` is UTF-8 and contains pinned versions used by Docker and CI.
+- `requirements.in` is the unpinned input file for dependency refreshes.
+- When updating dependencies, regenerate pins with:
+
+```bash
+pip-compile requirements.in -o requirements.txt
+```
 
 ## Project layout
 
