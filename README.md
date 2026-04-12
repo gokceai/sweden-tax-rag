@@ -41,7 +41,7 @@ Most open-source RAG demos store the raw document text as metadata on the vector
 
 > **The vector store holds vectors. The encrypted store holds the text. Nothing else.**
 
-It is a deliberate split-storage architecture with a reconciliation plane on top — a prototype for teams that want to understand what a "secure-ish" RAG layer actually looks like in code, not just on an architecture slide.
+It is a deliberate split-storage architecture with a reconciliation plane on top — a prototype for teams that want to understand what a security-oriented RAG layer actually looks like in code, not just on an architecture slide.
 
 ## What's in the box
 
@@ -117,7 +117,7 @@ Ports:
 | Gradio UI | `8501` |
 | Prometheus | `9090` |
 | Alertmanager | `9093` |
-| Grafana | `3000` (`admin` / `admin`) |
+| Grafana | `3000` (uses `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`) |
 | DCGM exporter (gpu-monitoring profile) | `9400` |
 
 Stop the stack with `docker compose down` (or `docker compose down -v` to wipe local volumes).
@@ -190,6 +190,7 @@ Full list lives in [src/core/config.py](src/core/config.py). The critical ones:
 | `EMBEDDING_MODEL` / `EMBEDDING_DEVICE` | Embedding model and runtime device (`auto`, `cpu`, `cuda`). |
 | `LLM_MODEL_HOST_PATH` / `LLM_MODEL_CONTAINER_ROOT` / `LLM_MODEL_PATH_IN_CONTAINER` | Host ↔ container model path mapping for Docker. |
 | `ENFORCE_ADMIN_AUTH` / `ADMIN_API_KEY` | Gate ingest/reconcile/repair endpoints with `X-Admin-Key`. |
+| `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` | Monitoring profile login for Grafana. |
 | `RETURN_CONTEXTS_IN_RESPONSE` / `CONTEXT_RESPONSE_MODE` | Context exposure policy: `none`, `redacted` (index + char count), or `full` (admin-gated). |
 | `RECONCILE_AUTORUN` / `RECONCILE_INTERVAL_SECONDS` | Background reconciliation worker. |
 | `SLO_*` | Latency / error / reconcile staleness targets for alerts. |
@@ -198,8 +199,9 @@ Full list lives in [src/core/config.py](src/core/config.py). The critical ones:
 
 | Setting | Local open-source default | Shared / production |
 |---|---|---|
-| `ENFORCE_ADMIN_AUTH` | `false` | `true` |
-| `ADMIN_API_KEY` | empty / placeholder | strong value from a secret manager |
+| `ENFORCE_ADMIN_AUTH` | `true` | `true` |
+| `ADMIN_API_KEY` | strong local secret | strong value from a secret manager |
+| `GRAFANA_ADMIN_PASSWORD` | non-default secret | secret manager value |
 | `RETURN_CONTEXTS_IN_RESPONSE` | `false` | `false` |
 | `CONTEXT_RESPONSE_MODE` | `none` | `none` or `redacted` |
 | `RECONCILE_AUTORUN` | `false` | `true` |
@@ -245,11 +247,15 @@ Every non-2xx response follows a stable shape so clients can triage programmatic
 
 ## API examples
 
+> **Auth note:** Admin routes require `X-Admin-Key` by default (`ENFORCE_ADMIN_AUTH=true` in `.env.example`).
+> For local-only experimentation, you can temporarily set `ENFORCE_ADMIN_AUTH=false`, but do not use that setting in shared/public deployments.
+
 Ingest a document:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/ingest \
   -H "Content-Type: application/json" \
+  -H "X-Admin-Key: <ADMIN_API_KEY>" \
   -d '{"document_text":"VAT on hotel stays in Sweden may use a reduced rate of 12 percent.","source_name":"hotel_vat_notes.txt"}'
 ```
 
@@ -264,9 +270,12 @@ curl -X POST http://localhost:8080/api/v1/retrieve \
 Reconcile drift:
 
 ```bash
-curl http://localhost:8080/api/v1/reconcile
+curl -H "X-Admin-Key: <ADMIN_API_KEY>" \
+  http://localhost:8080/api/v1/reconcile
+
 curl -X POST http://localhost:8080/api/v1/reconcile/repair \
   -H "Content-Type: application/json" \
+  -H "X-Admin-Key: <ADMIN_API_KEY>" \
   -d '{"only_in_chroma_action":"delete","only_in_document_store_action":"rehydrate"}'
 ```
 
@@ -289,6 +298,7 @@ python src/pipelines/vector_ingest/pipeline_cli.py \
 ```
 
 ## Adding new data
+Treat all ingest operations as admin-only by default.
 
 ### Option A: API ingest (single document)
 
@@ -377,9 +387,7 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 ├── Dockerfile.spaces
 ├── .github/workflows/ # CI definitions
 ├── docker-compose.yml
-├── Dockerfile
-├── SECURE_DEFAULTS.md # Security checklist before shared/production deployment
-└── todo.md            # Active task notes
+└── Dockerfile
 ```
 
 ## Security model (honest version)

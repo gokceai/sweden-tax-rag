@@ -1,4 +1,5 @@
 from functools import lru_cache
+import hmac
 
 from fastapi import Header, HTTPException
 
@@ -61,5 +62,5 @@ def require_admin_access(x_admin_key: str | None = Header(default=None)) -> None
     if not x_admin_key:
         raise HTTPException(status_code=401, detail="Missing X-Admin-Key header.")
 
-    if x_admin_key != settings.ADMIN_API_KEY:
+    if not hmac.compare_digest(x_admin_key, settings.ADMIN_API_KEY):
         raise HTTPException(status_code=403, detail="Invalid admin credentials.")

@@ -3,6 +3,7 @@ import threading
 import time
 import uuid
 import json
+import hmac
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -231,7 +232,10 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 def _has_valid_admin_key(request: Request) -> bool:
     if not settings.ADMIN_API_KEY:
         return False
-    return request.headers.get("X-Admin-Key") == settings.ADMIN_API_KEY
+    provided = request.headers.get("X-Admin-Key")
+    if not provided:
+        return False
+    return hmac.compare_digest(provided, settings.ADMIN_API_KEY)
 
 
 def _build_context_payload(contexts: list[str], request: Request):
@@ -302,7 +306,8 @@ def health_ready():
         checks["vector_db"]["ok"] = True
     except Exception as e:
         overall_ok = False
-        checks["vector_db"]["message"] = str(e)
+        checks["vector_db"]["message"] = "unavailable"
+        logger.warning("Ready check failed for vector_db: %s", e)
 
     try:
         ok = get_document_repository().ping()
@@ -311,7 +316,8 @@ def health_ready():
         checks["document_store"]["ok"] = True
     except Exception as e:
         overall_ok = False
-        checks["document_store"]["message"] = str(e)
+        checks["document_store"]["message"] = "unavailable"
+        logger.warning("Ready check failed for document_store: %s", e)
 
     payload = {"status": "ok" if overall_ok else "degraded", "mode": "ready", "checks": checks}
     if overall_ok:
@@ -332,14 +338,16 @@ def health_deep():
         checks["vector_db_query"]["ok"] = True
     except Exception as e:
         overall_ok = False
-        checks["vector_db_query"]["message"] = str(e)
+        checks["vector_db_query"]["message"] = "unavailable"
+        logger.warning("Deep check failed for vector_db_query: %s", e)
 
     try:
         _ = get_document_repository().list_chunk_ids()
         checks["document_store_scan"]["ok"] = True
     except Exception as e:
         overall_ok = False
-        checks["document_store_scan"]["message"] = str(e)
+        checks["document_store_scan"]["message"] = "unavailable"
+        logger.warning("Deep check failed for document_store_scan: %s", e)
 
     payload = {"status": "ok" if overall_ok else "degraded", "mode": "deep", "checks": checks}
     if overall_ok:
