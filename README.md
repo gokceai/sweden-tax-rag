@@ -109,12 +109,12 @@ Ports:
 
 Stop the stack with `docker compose down` (or `docker compose down -v` to wipe local volumes).
 
-> **GPU kullanımı opsiyoneldir.** Varsayılan `docker compose up -d` GPU gerektirmez.
-> GPU etkinleştirmek için:
+> **GPU usage is optional.** The default `docker compose up -d` does not require a GPU.
+> To enable GPU support:
 > ```bash
 > docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 > ```
-> NVIDIA Container Toolkit kurulumunu doğrulamak için:
+> To verify NVIDIA Container Toolkit installation:
 > ```bash
 > docker info | grep -Ei 'runtimes|nvidia'
 > ```
@@ -124,7 +124,7 @@ Stop the stack with `docker compose down` (or `docker compose down -v` to wipe l
 ```bash
 python -m venv .venv
 source .venv/bin/activate                    # Windows: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements/dev.in
 pip install -e .
 
 uvicorn src.api.main:app --reload --port 8080
@@ -312,13 +312,11 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs:
 
 ## Dependency workflow
 
-- `requirements.txt` is UTF-8 and contains pinned versions used by Docker and CI.
-- `requirements.in` is the unpinned input file for dependency refreshes.
-- When updating dependencies, regenerate pins with:
-
-```bash
-pip-compile requirements.in -o requirements.txt
-```
+- `requirements/base.in`: core API/runtime dependencies.
+- `requirements/ml.in`: model and embedding stack.
+- `requirements/ui.in`: frontend dependencies.
+- `requirements/dev.in`: test/lint/tooling (includes base + ml + ui).
+- `requirements.txt`: runtime aggregate for backward compatibility (`-r base.in -r ml.in -r ui.in`).
 
 ## Project layout
 

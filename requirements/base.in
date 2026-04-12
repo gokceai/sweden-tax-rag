@@ -1,0 +1,10 @@
+# Core API/runtime dependencies
+fastapi
+uvicorn
+python-dotenv
+pydantic
+pydantic-settings
+cryptography
+prometheus-client
+chromadb
+langchain-text-splitters

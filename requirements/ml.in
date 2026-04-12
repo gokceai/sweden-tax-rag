@@ -1,0 +1,4 @@
+# Model and embedding stack
+torch
+transformers
+sentence-transformers

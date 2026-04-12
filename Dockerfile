@@ -5,12 +5,12 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY requirements.txt ./
+COPY requirements ./requirements
 COPY pyproject.toml ./
 COPY src ./src
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r requirements/base.in -r requirements/ml.in -r requirements/ui.in && \
     pip install --no-cache-dir -e .
 
 EXPOSE 8080
