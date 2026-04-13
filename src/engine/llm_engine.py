@@ -14,7 +14,7 @@ class AnswerGenerator:
         self.settings = settings
         self.model_path = settings.LLM_MODEL_PATH
         self.device = settings.resolve_device(settings.LLM_DEVICE)
-        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
+        self.dtype = torch.float16 if self.device == "cuda" else torch.bfloat16
         if self.device != "cuda":
             logger.warning(
                 "No GPU detected - LLM will run on CPU (dtype=%s, slower). Model: %s",
@@ -47,7 +47,7 @@ class AnswerGenerator:
                 self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
                 self.model = AutoModelForCausalLM.from_pretrained(
                     self.model_path,
-                    dtype=self.dtype,
+                    torch_dtype=self.dtype,
                     low_cpu_mem_usage=True,
                     device_map="auto" if self.device == "cuda" else None,
                 )
