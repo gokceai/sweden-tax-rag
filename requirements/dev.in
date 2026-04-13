@@ -1,7 +1,0 @@
-# Development and CI tooling
--r base.in
--r ml.in
--r ui.in
-pytest
-ruff
-pip-tools

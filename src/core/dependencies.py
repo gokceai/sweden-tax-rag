@@ -1,7 +1,4 @@
 from functools import lru_cache
-import hmac
-
-from fastapi import Header, HTTPException
 
 from src.core.config import settings
 from src.core.exceptions import ConfigurationError, InfrastructureError
@@ -24,7 +21,7 @@ def get_vector_db_manager() -> VectorDBManager:
     try:
         return VectorDBManager()
     except Exception as e:
-        raise InfrastructureError(f"Vector DB manager initialization failed: {e}") from e
+        raise InfrastructureError(f"Vector DB init failed: {e}") from e
 
 
 @lru_cache
@@ -35,7 +32,7 @@ def get_document_repository() -> SQLiteDocumentRepository:
             encryption_manager=get_encryption_manager(),
         )
     except Exception as e:
-        raise InfrastructureError(f"Document repository initialization failed: {e}") from e
+        raise InfrastructureError(f"Document repository init failed: {e}") from e
 
 
 @lru_cache
@@ -50,17 +47,3 @@ def get_rag_engine() -> RAGEngine:
 @lru_cache
 def get_answer_generator() -> AnswerGenerator:
     return AnswerGenerator(settings=settings)
-
-
-def require_admin_access(x_admin_key: str | None = Header(default=None)) -> None:
-    if not settings.ENFORCE_ADMIN_AUTH:
-        return
-
-    if not settings.ADMIN_API_KEY:
-        raise HTTPException(status_code=500, detail="Admin auth is enabled but ADMIN_API_KEY is not configured.")
-
-    if not x_admin_key:
-        raise HTTPException(status_code=401, detail="Missing X-Admin-Key header.")
-
-    if not hmac.compare_digest(x_admin_key, settings.ADMIN_API_KEY):
-        raise HTTPException(status_code=403, detail="Invalid admin credentials.")

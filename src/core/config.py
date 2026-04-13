@@ -1,8 +1,8 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables once.
 load_dotenv()
+
 
 class Settings:
     # Project metadata
@@ -10,12 +10,11 @@ class Settings:
     PROJECT_VERSION = "1.0.0"
     PROJECT_DESCRIPTION = "RAG engine with encryption for Swedish tax laws."
 
-    # Network and port settings
-    # Default 7860 matches HF Spaces. Override to 8080 for local-only Docker.
+    # Network
     API_PORT = int(os.getenv("API_PORT", 7860))
     API_BASE_URL = os.getenv("API_BASE_URL", f"http://localhost:{API_PORT}/api/v1")
 
-    # Database settings
+    # ChromaDB
     CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./docker/chroma_data")
     CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "swedish_tax_vectors")
     CHROMA_DISTANCE = os.getenv("CHROMA_DISTANCE", "cosine")
@@ -23,24 +22,10 @@ class Settings:
     # SQLite encrypted document store
     SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "./docker/documents.db")
 
-    # Security
+    # Encryption
     MASTER_ENCRYPTION_KEY = os.getenv("MASTER_ENCRYPTION_KEY")
-    RETURN_CONTEXTS_IN_RESPONSE = os.getenv("RETURN_CONTEXTS_IN_RESPONSE", "false").lower() == "true"
-    CONTEXT_RESPONSE_MODE = os.getenv("CONTEXT_RESPONSE_MODE", "none").lower()
-    ENABLE_INGEST_UI = os.getenv("ENABLE_INGEST_UI", "false").lower() == "true"
-    RECONCILE_AUTORUN = os.getenv("RECONCILE_AUTORUN", "false").lower() == "true"
-    RECONCILE_INTERVAL_SECONDS = int(os.getenv("RECONCILE_INTERVAL_SECONDS", 300))
-    ENFORCE_ADMIN_AUTH = os.getenv("ENFORCE_ADMIN_AUTH", "false").lower() == "true"
-    ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 
-    # Monitoring targets (SLO baselines)
-    SLO_API_P95_LATENCY_MS = int(os.getenv("SLO_API_P95_LATENCY_MS", 2500))
-    SLO_API_5XX_ERROR_RATE_PERCENT = float(os.getenv("SLO_API_5XX_ERROR_RATE_PERCENT", 1.0))
-    SLO_RETRIEVE_SUCCESS_RATE_PERCENT = float(os.getenv("SLO_RETRIEVE_SUCCESS_RATE_PERCENT", 99.0))
-    SLO_RECONCILE_MISMATCH_ALLOWED = int(os.getenv("SLO_RECONCILE_MISMATCH_ALLOWED", 0))
-    SLO_RECONCILE_MAX_STALENESS_MINUTES = int(os.getenv("SLO_RECONCILE_MAX_STALENESS_MINUTES", 1440))
-
-    # AI and RAG settings
+    # LLM & embeddings
     LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", "meta-llama/Llama-3.2-1B-Instruct")
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
     EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "auto").lower()
@@ -49,14 +34,10 @@ class Settings:
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 50))
     LLM_MAX_NEW_TOKENS = int(os.getenv("LLM_MAX_NEW_TOKENS", 250))
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1))
-    # Load model at startup instead of on first request (default: true)
     LLM_EAGER_LOAD = os.getenv("LLM_EAGER_LOAD", "true").lower() == "true"
-    # 8-bit quantization via bitsandbytes — reduces GPU memory ~50%, requires CUDA
-    LLM_USE_INT8 = os.getenv("LLM_USE_INT8", "false").lower() == "true"
 
     @staticmethod
     def resolve_device(preference: str = "auto") -> str:
-        """Resolve 'auto' / 'cpu' / 'cuda' to an actual device string."""
         if preference in ("cpu", "cuda", "mps"):
             return preference
         try:
@@ -65,7 +46,6 @@ class Settings:
         except ImportError:
             return "cpu"
 
-    # LLM main prompt
     SYSTEM_PROMPT = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 You are an elite Swedish Tax Advisor AI. Your task is to answer the user's question accurately using ONLY the provided context.
 If the answer cannot be found in the context, say "Based on the provided documents, I cannot answer this." Do not hallucinate or use outside knowledge.
@@ -74,6 +54,8 @@ Keep your answer professional, clear, and concise.
 CONTEXT:
 {context}<|eot_id|><|start_header_id|>user<|end_header_id|>
 QUESTION: {query}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
-    WARNING_PROMPT = """I am sorry, but I couldn't find any relevant legal documents to answer your question."""
+
+    WARNING_PROMPT = "I am sorry, but I couldn't find any relevant legal documents to answer your question."
+
 
 settings = Settings()

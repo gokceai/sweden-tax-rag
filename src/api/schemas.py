@@ -1,32 +1,6 @@
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
-class IngestRequest(BaseModel):
-    document_text: str = Field(
-        ...,
-        min_length=10,
-        max_length=100_000,
-        description="Original document text to be processed",
-    )
-    source_name: str = Field(
-        ...,
-        min_length=3,
-        max_length=256,
-        description="The source or name of the document (e.g., skatteverket_2026.pdf))",
-    )
 
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=5, max_length=2000, description="User's question")
-    top_k: int = Field(2, ge=1, le=5, description="Maximum number of contexts (parts) to be retrieved")
-
-
-class ReconcileRepairRequest(BaseModel):
-    only_in_chroma_action: Literal["delete", "mark_for_review"] = Field(
-        "mark_for_review",
-        description="How to handle IDs existing only in Chroma.",
-    )
-    only_in_document_store_action: Literal["rehydrate", "delete", "mark_for_review"] = Field(
-        "mark_for_review",
-        description="How to handle IDs existing only in the document store (SQLite).",
-    )
+    top_k: int = Field(2, ge=1, le=5, description="Maximum number of context chunks to retrieve")
