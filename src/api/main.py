@@ -20,15 +20,25 @@ if settings.LLM_EAGER_LOAD:
     threading.Thread(target=_warmup, daemon=True, name="llm-warmup").start()
 
 if __name__ == "__main__":
-    # HF Spaces injects SPACE_HOST as the exact public subdomain,
-    # e.g. "owner-spacename.hf.space".  We need this so that Gradio puts
-    # the correct URL in window.gradio_config.root — otherwise the browser
-    # JS tries to reach the internal http://0.0.0.0:7860 address and the
-    # page renders blank.
-    _root_path: str | None = None
-    _space_host = os.environ.get("SPACE_HOST", "")
-    if _space_host:
-        _root_path = f"https://{_space_host}"
+    # Gradio embeds root_path as window.gradio_config.root in the page HTML.
+    # The browser JS uses this URL for all API/WebSocket calls.
+    # Without a correct public URL the JS calls http://0.0.0.0:7860 →
+    # network error → blank page.
+    #
+    # Priority: GRADIO_ROOT_PATH env var (set by entrypoint.sh) →
+    #           SPACE_HOST env var → SPACE_ID derivation → None (local dev).
+    _root_path: str | None = (
+        os.environ.get("GRADIO_ROOT_PATH")
+        or (f"https://{os.environ['SPACE_HOST']}" if os.environ.get("SPACE_HOST") else None)
+        or (
+            "https://{}-{}.hf.space".format(
+                *[p.lower().replace("_", "-") for p in os.environ["SPACE_ID"].split("/", 1)]
+            )
+            if os.environ.get("SPACE_ID", "").count("/") >= 1
+            else None
+        )
+    )
+    logger.info("Gradio root_path resolved to: %s", _root_path)
 
     _demo.launch(
         server_name="0.0.0.0",
