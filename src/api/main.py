@@ -646,7 +646,20 @@ def repair_storage(
 # Gradio UI — mounted at "/" so HF Spaces shows the UI on the root path.
 # API routes defined above (/api/v1/*, /health/*, /metrics) take precedence.
 # ---------------------------------------------------------------------------
+import os as _os  # noqa: E402
+
 import gradio as gr  # noqa: E402
 from src.frontend.app import app as _gradio_demo  # noqa: E402
 
-gr.mount_gradio_app(app, _gradio_demo, path="/", ssr_mode=False)
+# On HF Spaces the request arrives via an internal proxy that does not forward
+# x-forwarded-host, so Gradio computes root="http://0.0.0.0:7860" and the
+# frontend JS tries to call that internal address → blank screen.
+# We construct the real public URL from the SPACE_ID env var that HF injects.
+_root_path: str | None = None
+if _os.environ.get("SYSTEM") == "spaces":
+    _space_id = _os.environ.get("SPACE_ID", "")
+    if "/" in _space_id:
+        _author, _repo = _space_id.split("/", 1)
+        _root_path = f"https://{_author.lower()}-{_repo.lower()}.hf.space"
+
+gr.mount_gradio_app(app, _gradio_demo, path="/", ssr_mode=False, root_path=_root_path)
