@@ -92,7 +92,7 @@ def _set_inputs_enabled(enabled: bool):
 
 
 def build_app() -> gr.Blocks:
-    with gr.Blocks(title=settings.PROJECT_NAME, css=CUSTOM_CSS) as demo:
+    with gr.Blocks(title=settings.PROJECT_NAME, head=f"<style>{CUSTOM_CSS}</style>") as demo:
         gr.Markdown(f"## {settings.PROJECT_NAME}", elem_id="app-title")
         gr.Markdown("Ask your Swedish tax question through the API.", elem_id="app-subtitle")
 
