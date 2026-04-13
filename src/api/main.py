@@ -20,17 +20,19 @@ if settings.LLM_EAGER_LOAD:
     threading.Thread(target=_warmup, daemon=True, name="llm-warmup").start()
 
 if __name__ == "__main__":
+    # HF Spaces injects SPACE_HOST as the exact public subdomain,
+    # e.g. "owner-spacename.hf.space".  We need this so that Gradio puts
+    # the correct URL in window.gradio_config.root — otherwise the browser
+    # JS tries to reach the internal http://0.0.0.0:7860 address and the
+    # page renders blank.
     _root_path: str | None = None
-    if os.environ.get("SYSTEM") == "spaces":
-        _space_id = os.environ.get("SPACE_ID", "")
-        if "/" in _space_id:
-            _author, _repo = _space_id.split("/", 1)
-            _root_path = f"https://{_author.lower()}-{_repo.lower()}.hf.space"
+    _space_host = os.environ.get("SPACE_HOST", "")
+    if _space_host:
+        _root_path = f"https://{_space_host}"
 
     _demo.launch(
         server_name="0.0.0.0",
         server_port=settings.API_PORT,
         root_path=_root_path,
         ssr_mode=False,
-        show_api=False,
     )

@@ -1,3 +1,2 @@
 # Frontend/UI dependencies
 gradio==5.50.0
-requests

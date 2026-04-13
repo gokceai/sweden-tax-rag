@@ -17,4 +17,10 @@ else
     echo "=== Dataset already seeded or not found, skipping ==="
 fi
 
+# Tell Gradio the public root so window.gradio_config.root is correct.
+# Without this the browser JS calls http://0.0.0.0:7860 → blank page.
+if [ -n "$SPACE_HOST" ]; then
+    export GRADIO_ROOT_PATH="https://$SPACE_HOST"
+fi
+
 exec python src/api/main.py
