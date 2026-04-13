@@ -5,45 +5,6 @@ from src.core.config import settings
 
 API_URL = settings.API_BASE_URL
 
-CUSTOM_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap');
-
-:root {
-  --bg-start: #101926;
-  --bg-end: #18263a;
-  --text-main: #eef5ff;
-  --text-subtle: #dce7f6;
-  --button-start: #14b8a6;
-  --button-end: #0f766e;
-}
-
-.gradio-container {
-  font-family: 'Manrope', sans-serif !important;
-  background: linear-gradient(165deg, var(--bg-start) 0%, var(--bg-end) 100%);
-  color: var(--text-main);
-}
-
-#app-title {
-  text-align: center;
-  letter-spacing: -0.02em;
-  margin-bottom: 0.8rem;
-}
-
-#app-subtitle {
-  text-align: center;
-  color: var(--text-subtle);
-  margin-bottom: 1.2rem;
-}
-
-button.primary {
-  border: none !important;
-  border-radius: 999px !important;
-  background: linear-gradient(135deg, var(--button-start), var(--button-end)) !important;
-  color: #ffffff !important;
-  font-weight: 700 !important;
-}
-"""
-
 
 def _candidate_api_urls() -> list[str]:
     """Try configured URL first; fall back to localhost variants for same-container setups."""
@@ -92,9 +53,14 @@ def _set_inputs_enabled(enabled: bool):
 
 
 def build_app() -> gr.Blocks:
-    with gr.Blocks(title=settings.PROJECT_NAME, head=f"<style>{CUSTOM_CSS}</style>") as demo:
-        gr.Markdown(f"## {settings.PROJECT_NAME}", elem_id="app-title")
-        gr.Markdown("Ask your Swedish tax question through the API.", elem_id="app-subtitle")
+    theme = gr.themes.Soft(
+        primary_hue="teal",
+        secondary_hue="slate",
+        font=gr.themes.GoogleFont("Manrope"),
+    )
+    with gr.Blocks(title=settings.PROJECT_NAME, theme=theme) as demo:
+        gr.Markdown(f"## ⚖️ {settings.PROJECT_NAME}")
+        gr.Markdown("Ask your Swedish tax question below.")
 
         question = gr.Textbox(
             label="Question",
