@@ -12,7 +12,6 @@ class Settings:
 
     # Network
     API_PORT = int(os.getenv("API_PORT", 7860))
-    API_BASE_URL = os.getenv("API_BASE_URL", f"http://localhost:{API_PORT}/api/v1")
 
     # ChromaDB
     CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./docker/chroma_data")

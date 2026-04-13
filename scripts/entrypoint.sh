@@ -17,4 +17,4 @@ else
     echo "=== Dataset already seeded or not found, skipping ==="
 fi
 
-exec uvicorn src.api.main:app --host 0.0.0.0 --port "${API_PORT:-7860}"
+exec python src/api/main.py

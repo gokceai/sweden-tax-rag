@@ -1,6 +1,4 @@
-# Core API/runtime dependencies
-fastapi
-uvicorn
+# Core runtime dependencies
 python-dotenv
 pydantic
 pydantic-settings

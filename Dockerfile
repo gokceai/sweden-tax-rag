@@ -7,7 +7,6 @@ ENV PYTHONUNBUFFERED=1
 
 # Default port used by HF Spaces. Override via API_PORT env var for local use.
 ENV API_PORT=7860
-ENV API_BASE_URL=http://localhost:7860/api/v1
 
 WORKDIR /app
 
