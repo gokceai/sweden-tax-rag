@@ -4,8 +4,18 @@ set -e
 
 DATASET="${SEED_DATASET:-/app/example-dataset/chunks_converted.jsonl}"
 MARKER="${SQLITE_DB_PATH:-/data/documents.db}.seeded"
+IS_HF_SPACE=false
+if [ -n "${SPACE_HOST}" ] || [ -n "${SPACE_ID}" ]; then
+    IS_HF_SPACE=true
+fi
 
-if [ -f "$DATASET" ] && [ ! -f "$MARKER" ]; then
+DEFAULT_SEED_ON_STARTUP=true
+if [ "${IS_HF_SPACE}" = "true" ]; then
+    DEFAULT_SEED_ON_STARTUP=false
+fi
+SEED_ON_STARTUP="${SEED_ON_STARTUP:-$DEFAULT_SEED_ON_STARTUP}"
+
+if [ "${SEED_ON_STARTUP}" = "true" ] && [ -f "$DATASET" ] && [ ! -f "$MARKER" ]; then
     echo "=== Seeding example dataset ==="
     python src/pipelines/vector_ingest/pipeline_cli.py \
         --input "$DATASET" \
@@ -14,7 +24,7 @@ if [ -f "$DATASET" ] && [ ! -f "$MARKER" ]; then
     touch "$MARKER"
     echo "=== Seeding complete ==="
 else
-    echo "=== Dataset already seeded or not found, skipping ==="
+    echo "=== Seeding skipped (SEED_ON_STARTUP=${SEED_ON_STARTUP}) or dataset already seeded/not found ==="
 fi
 
 echo "=== HF env: SPACE_HOST='${SPACE_HOST}' SPACE_ID='${SPACE_ID}' SYSTEM='${SYSTEM}' ==="

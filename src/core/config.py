@@ -33,7 +33,9 @@ class Settings:
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 50))
     LLM_MAX_NEW_TOKENS = int(os.getenv("LLM_MAX_NEW_TOKENS", 250))
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1))
+    _IS_HF_SPACE = bool(os.getenv("SPACE_ID") or os.getenv("SPACE_HOST"))
     LLM_EAGER_LOAD = os.getenv("LLM_EAGER_LOAD", "true").lower() == "true"
+    LLM_USE_INT8 = os.getenv("LLM_USE_INT8", "true" if _IS_HF_SPACE else "false").lower() == "true"
 
     @staticmethod
     def resolve_device(preference: str = "auto") -> str:

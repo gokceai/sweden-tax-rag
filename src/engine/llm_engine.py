@@ -15,6 +15,7 @@ class AnswerGenerator:
         self.model_path = settings.LLM_MODEL_PATH
         self.device = settings.resolve_device(settings.LLM_DEVICE)
         self.dtype = torch.float16 if self.device == "cuda" else torch.bfloat16
+        self.use_int8 = settings.LLM_USE_INT8
         if self.device != "cuda":
             logger.warning(
                 "No GPU detected - LLM will run on CPU (dtype=%s, slower). Model: %s",
@@ -45,18 +46,48 @@ class AnswerGenerator:
                 return
             try:
                 self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
-                self.model = AutoModelForCausalLM.from_pretrained(
-                    self.model_path,
-                    torch_dtype=self.dtype,
-                    low_cpu_mem_usage=True,
-                    device_map="auto" if self.device == "cuda" else None,
-                )
+                self.model = self._load_model()
                 if self.device == "cpu":
                     self.model.to(self.device)
                 logger.info("LLM '%s' loaded on %s.", self.model_path, self.device.upper())
             except Exception as e:
                 self._load_error = e
                 raise InfrastructureError(f"LLM load failed: {e}") from e
+
+    def _load_model(self):
+        if self.device == "cuda" and self.use_int8:
+            try:
+                from transformers import BitsAndBytesConfig  # noqa: PLC0415
+
+                logger.info("Loading LLM with GPU 8-bit quantization (bitsandbytes).")
+                return AutoModelForCausalLM.from_pretrained(
+                    self.model_path,
+                    quantization_config=BitsAndBytesConfig(load_in_8bit=True),
+                    low_cpu_mem_usage=True,
+                    device_map="auto",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("INT8 GPU quantization unavailable; falling back to dtype load: %s", exc)
+
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_path,
+            dtype=self.dtype,
+            low_cpu_mem_usage=True,
+            device_map="auto" if self.device == "cuda" else None,
+        )
+
+        if self.device == "cpu" and self.use_int8:
+            try:
+                logger.info("Applying dynamic INT8 quantization on CPU.")
+                model = torch.quantization.quantize_dynamic(
+                    model,
+                    {torch.nn.Linear},
+                    dtype=torch.qint8,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CPU INT8 quantization failed; using non-quantized model: %s", exc)
+
+        return model
 
     def generate_answer(self, query: str, contexts: list) -> str:
         if not contexts:
