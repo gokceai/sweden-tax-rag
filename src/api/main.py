@@ -56,6 +56,5 @@ if __name__ == "__main__":
         server_name="0.0.0.0",
         server_port=settings.API_PORT,
         root_path=_root_path,
-        ssr_mode=False,
         show_error=True,
     )
