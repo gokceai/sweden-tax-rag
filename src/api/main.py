@@ -19,12 +19,10 @@ if settings.LLM_EAGER_LOAD:
 
     threading.Thread(target=_warmup, daemon=True, name="llm-warmup").start()
 
-
 if __name__ == "__main__":
     _demo.launch(
         server_name="0.0.0.0",
         server_port=settings.API_PORT,
-        root_path="",
         ssr_mode=True,
         show_error=True,
     )
