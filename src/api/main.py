@@ -20,25 +20,11 @@ if settings.LLM_EAGER_LOAD:
     threading.Thread(target=_warmup, daemon=True, name="llm-warmup").start()
 
 
-def _resolve_gradio_root_path() -> str | None:
-    raw = (os.environ.get("GRADIO_ROOT_PATH") or "").strip()
-    if raw:
-        if raw.startswith("http://") or raw.startswith("https://"):
-            return raw.rstrip("/")
-        if not raw.startswith("/"):
-            return f"/{raw}"
-        return raw
-    return None
-
-
 if __name__ == "__main__":
-    _root_path = _resolve_gradio_root_path()
-    logger.info("Gradio root_path resolved to: %s", _root_path)
-
     _demo.launch(
         server_name="0.0.0.0",
         server_port=settings.API_PORT,
-        root_path=_root_path, 
+        root_path="",
         ssr_mode=True,
         show_error=True,
-)
+    )
