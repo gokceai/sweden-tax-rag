@@ -17,17 +17,10 @@ else
     echo "=== Dataset already seeded or not found, skipping ==="
 fi
 
-# Tell Gradio the public root so window.gradio_config.root is correct.
-# Without this the browser JS calls http://0.0.0.0:7860 → blank page.
 echo "=== HF env: SPACE_HOST='${SPACE_HOST}' SPACE_ID='${SPACE_ID}' SYSTEM='${SYSTEM}' ==="
-if [ -n "$SPACE_HOST" ]; then
-    export GRADIO_ROOT_PATH="https://$SPACE_HOST"
-elif [ -n "$SPACE_ID" ]; then
-    # Derive subdomain: "Owner/my-space" → "owner-my-space.hf.space"
-    _AUTHOR=$(echo "$SPACE_ID" | cut -d'/' -f1 | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-    _REPO=$(echo "$SPACE_ID" | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-    export GRADIO_ROOT_PATH="https://${_AUTHOR}-${_REPO}.hf.space"
-fi
+# Keep GRADIO_ROOT_PATH untouched unless explicitly provided by the runtime.
+# On HF Spaces, forcing an absolute URL here can break signed/private requests
+# and lead to a blank UI.
 echo "=== GRADIO_ROOT_PATH='${GRADIO_ROOT_PATH}' ==="
 
 exec python src/api/main.py

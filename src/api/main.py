@@ -1,6 +1,7 @@
 import logging
 import os
 import threading
+from urllib.parse import urlparse
 
 from src.core.config import settings
 from src.core.dependencies import get_answer_generator
@@ -19,25 +20,36 @@ if settings.LLM_EAGER_LOAD:
 
     threading.Thread(target=_warmup, daemon=True, name="llm-warmup").start()
 
-if __name__ == "__main__":
-    # Gradio embeds root_path as window.gradio_config.root in the page HTML.
-    # The browser JS uses this URL for all API/WebSocket calls.
-    # Without a correct public URL the JS calls http://0.0.0.0:7860 →
-    # network error → blank page.
-    #
-    # Priority: GRADIO_ROOT_PATH env var (set by entrypoint.sh) →
-    #           SPACE_HOST env var → SPACE_ID derivation → None (local dev).
-    _root_path: str | None = (
-        os.environ.get("GRADIO_ROOT_PATH")
-        or (f"https://{os.environ['SPACE_HOST']}" if os.environ.get("SPACE_HOST") else None)
-        or (
-            "https://{}-{}.hf.space".format(
-                *[p.lower().replace("_", "-") for p in os.environ["SPACE_ID"].split("/", 1)]
-            )
-            if os.environ.get("SPACE_ID", "").count("/") >= 1
-            else None
+
+def _resolve_gradio_root_path() -> str | None:
+    """Return a safe root_path for Gradio.
+
+    - Prefer explicit GRADIO_ROOT_PATH when provided.
+    - If a full URL is provided, reduce it to path only.
+    - In HF Spaces defaults, return None and let Gradio infer host/proxy.
+    """
+    raw = (os.environ.get("GRADIO_ROOT_PATH") or "").strip()
+    if not raw:
+        return None
+
+    if raw.startswith("http://") or raw.startswith("https://"):
+        parsed = urlparse(raw)
+        path = parsed.path or "/"
+        logger.warning(
+            "GRADIO_ROOT_PATH should be a path, not a full URL. "
+            "Using parsed path '%s' from '%s'.",
+            path,
+            raw,
         )
-    )
+        return path
+
+    if not raw.startswith("/"):
+        return f"/{raw}"
+    return raw
+
+
+if __name__ == "__main__":
+    _root_path = _resolve_gradio_root_path()
     logger.info("Gradio root_path resolved to: %s", _root_path)
 
     _demo.launch(
@@ -45,4 +57,5 @@ if __name__ == "__main__":
         server_port=settings.API_PORT,
         root_path=_root_path,
         ssr_mode=False,
+        show_error=True,
     )
