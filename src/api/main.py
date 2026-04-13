@@ -59,7 +59,7 @@ if __name__ == "__main__":
     _demo.launch(
         server_name="0.0.0.0",
         server_port=settings.API_PORT,
-        root_path="/",
+        root_path=_root_path or "/",
         ssr_mode=False,
         show_error=True,
     )
