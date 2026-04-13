@@ -22,7 +22,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements/base.in -r requirements/ml.in -r requirements/ui.in
 
 COPY src ./src
-RUN pip install --no-cache-dir -e .
+COPY example-dataset ./example-dataset
+COPY scripts/entrypoint.sh ./entrypoint.sh
+RUN pip install --no-cache-dir -e . && chmod +x entrypoint.sh
 
 # HF Spaces runs containers as UID 1000.
 RUN mkdir -p /data && useradd -m -u 1000 appuser && chown -R appuser /data /app
@@ -34,4 +36,4 @@ ENV SQLITE_DB_PATH=/data/documents.db
 
 EXPOSE 7860
 
-CMD ["sh", "-c", "uvicorn src.api.main:app --host 0.0.0.0 --port ${API_PORT:-7860}"]
+CMD ["./entrypoint.sh"]
