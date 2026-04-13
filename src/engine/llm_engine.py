@@ -14,7 +14,7 @@ class AnswerGenerator:
         self.settings = settings
         self.model_path = settings.LLM_MODEL_PATH
         self.device = settings.resolve_device(settings.LLM_DEVICE)
-        self.dtype = torch.float16 if self.device == "cuda" else torch.bfloat16
+        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
         self.use_int8 = settings.LLM_USE_INT8
         if self.device != "cuda":
             logger.warning(
