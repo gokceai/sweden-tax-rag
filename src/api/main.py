@@ -649,4 +649,4 @@ def repair_storage(
 import gradio as gr  # noqa: E402
 from src.frontend.app import app as _gradio_demo  # noqa: E402
 
-gr.mount_gradio_app(app, _gradio_demo, path="/")
+gr.mount_gradio_app(app, _gradio_demo, path="/", ssr_mode=False)
