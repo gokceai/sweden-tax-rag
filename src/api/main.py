@@ -1,7 +1,6 @@
 import logging
 import os
 import threading
-from urllib.parse import urlparse
 
 from src.core.config import settings
 from src.core.dependencies import get_answer_generator
@@ -24,28 +23,33 @@ if settings.LLM_EAGER_LOAD:
 def _resolve_gradio_root_path() -> str | None:
     """Return a safe root_path for Gradio.
 
-    - Prefer explicit GRADIO_ROOT_PATH when provided.
-    - If a full URL is provided, reduce it to path only.
-    - In HF Spaces defaults, return None and let Gradio infer host/proxy.
+    Priority order:
+    1. Explicit GRADIO_ROOT_PATH env var (full URL or path) — used as-is.
+    2. HF Spaces: construct full HTTPS URL from SPACE_HOST so Gradio 5.x
+       embeds the correct public origin in every /config response (bypasses
+       unreliable x-forwarded-host detection on HF's nginx proxy).
+    3. Otherwise return None (Gradio falls back to its own detection).
+
+    Gradio 5.x get_root_url() short-circuits to the supplied value when it
+    is a full http(s) URL, so passing the HF public URL here is the
+    authoritative fix for the blank-page / wrong-root bug.
     """
     raw = (os.environ.get("GRADIO_ROOT_PATH") or "").strip()
-    if not raw:
-        return None
+    if raw:
+        # Accept full URLs unchanged; normalise bare paths.
+        if raw.startswith("http://") or raw.startswith("https://"):
+            return raw.rstrip("/")
+        if not raw.startswith("/"):
+            return f"/{raw}"
+        return raw
 
-    if raw.startswith("http://") or raw.startswith("https://"):
-        parsed = urlparse(raw)
-        path = parsed.path or "/"
-        logger.warning(
-            "GRADIO_ROOT_PATH should be a path, not a full URL. "
-            "Using parsed path '%s' from '%s'.",
-            path,
-            raw,
-        )
-        return path
+    space_host = (os.environ.get("SPACE_HOST") or "").strip()
+    if space_host:
+        root = f"https://{space_host}"
+        logger.info("HF Spaces detected — using root_path='%s'", root)
+        return root
 
-    if not raw.startswith("/"):
-        return f"/{raw}"
-    return raw
+    return None
 
 
 if __name__ == "__main__":
