@@ -23,6 +23,6 @@ if __name__ == "__main__":
     _demo.launch(
         server_name="0.0.0.0",
         server_port=settings.API_PORT,
-        ssr_mode=True,
+        ssr_mode=False,
         show_error=True,
     )
