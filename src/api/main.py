@@ -1,7 +1,8 @@
 import logging
 import os
-from contextlib import asynccontextmanager
+import threading
 
+import gradio as gr
 from fastapi import FastAPI, HTTPException
 
 from src.api.schemas import QueryRequest
@@ -11,54 +12,38 @@ from src.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    if settings.LLM_EAGER_LOAD:
-        import threading
-
-        def _warmup():
-            try:
-                get_answer_generator().load()
-            except Exception as exc:
-                logger.error("LLM warmup failed: %s", exc)
-
-        threading.Thread(target=_warmup, daemon=True, name="llm-warmup").start()
-    yield
-
-
-fastapi_app = FastAPI(
+# ---------------------------------------------------------------------------
+# API routes
+# ---------------------------------------------------------------------------
+app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.PROJECT_DESCRIPTION,
     version=settings.PROJECT_VERSION,
-    lifespan=lifespan,
 )
 
 
-@fastapi_app.get("/ping", include_in_schema=False)
+@app.get("/ping", include_in_schema=False)
 def ping():
     return {"status": "ACTIVE", "service": settings.PROJECT_NAME}
 
 
-@fastapi_app.get("/health/live", include_in_schema=False)
+@app.get("/health/live", include_in_schema=False)
 def health_live():
     return {"status": "ok"}
 
 
-@fastapi_app.get("/health/ready", include_in_schema=False)
+@app.get("/health/ready", include_in_schema=False)
 def health_ready():
     from src.core.dependencies import get_document_repository, get_vector_db_manager
 
     checks = {}
     ok = True
-
     try:
         _ = get_vector_db_manager().collection_name
         checks["vector_db"] = "ok"
     except Exception:
         checks["vector_db"] = "unavailable"
         ok = False
-
     try:
         if not get_document_repository().ping():
             raise RuntimeError("ping returned False")
@@ -66,7 +51,6 @@ def health_ready():
     except Exception:
         checks["document_store"] = "unavailable"
         ok = False
-
     gen = get_answer_generator()
     if gen.is_ready:
         checks["llm"] = "ok"
@@ -75,14 +59,13 @@ def health_ready():
         ok = False
     else:
         checks["llm"] = "loading"
-
     payload = {"status": "ok" if ok else "degraded", "checks": checks}
     if ok:
         return payload
     raise HTTPException(status_code=503, detail=payload)
 
 
-@fastapi_app.post("/api/v1/retrieve", summary="Ask a question and get an AI answer")
+@app.post("/api/v1/retrieve", summary="Ask a question and get an AI answer")
 def retrieve_and_generate(request: QueryRequest):
     try:
         contexts = get_rag_engine().retrieve_context(request.query, request.top_k)
@@ -98,32 +81,41 @@ def retrieve_and_generate(request: QueryRequest):
 
 
 # ---------------------------------------------------------------------------
-# Gradio UI — Gradio-first: create the ASGI app from the demo, then add our
-# FastAPI routes on top.  This is the HF Spaces–native pattern and avoids
-# the blank-screen issue caused by gr.mount_gradio_app on a proxy that does
-# not forward x-forwarded-host.
+# Gradio UI
+#
+# We use gr.mount_gradio_app (the supported public API) so that Gradio's own
+# lifespan and static-file serving are fully initialised.
+#
+# Root-path fix: HF Spaces proxies do not forward x-forwarded-host, so
+# Gradio would compute root="http://0.0.0.0:7860" and the browser JS would
+# call that internal address → blank screen / asset 404s.
+# mount_gradio_app accepts an explicit root_path that overrides the header
+# detection.  We derive the public URL from the SPACE_ID env var that HF
+# injects into every container at runtime.
 # ---------------------------------------------------------------------------
-import gradio as gr  # noqa: E402
-from gradio.routes import App  # noqa: E402
-
 from src.frontend.app import build_app  # noqa: E402
 
 _demo = build_app()
 
-# On HF Spaces the proxy does not forward x-forwarded-host, so Gradio would
-# compute root="http://0.0.0.0:7860" and the browser JS would try to call
-# that internal address → blank screen.
-# We set blocks.root_path BEFORE App.create_app() so the Gradio App picks it
-# up at line:  self.root_path = blocks.root_path or ""
+_root_path: str | None = None
 if os.environ.get("SYSTEM") == "spaces":
     _space_id = os.environ.get("SPACE_ID", "")
     if "/" in _space_id:
         _author, _repo = _space_id.split("/", 1)
-        _demo.root_path = f"https://{_author.lower()}-{_repo.lower()}.hf.space"
+        _root_path = f"https://{_author.lower()}-{_repo.lower()}.hf.space"
 
-# Build the Gradio ASGI app and mount our FastAPI routes onto it.
-app = App.create_app(_demo, ssr_mode=False)
-app.include_router(fastapi_app.router)
+gr.mount_gradio_app(app, _demo, path="/", ssr_mode=False, root_path=_root_path)
 
-# Carry over the lifespan so LLM warmup still runs.
-app.router.lifespan_context = fastapi_app.router.lifespan_context  # type: ignore
+# ---------------------------------------------------------------------------
+# LLM warmup — start immediately after the module loads so the model is ready
+# by the time the first user request arrives.  This runs in a daemon thread
+# so it does not block Uvicorn startup.
+# ---------------------------------------------------------------------------
+if settings.LLM_EAGER_LOAD:
+    def _warmup():
+        try:
+            get_answer_generator().load()
+        except Exception as exc:
+            logger.error("LLM warmup failed: %s", exc)
+
+    threading.Thread(target=_warmup, daemon=True, name="llm-warmup").start()
