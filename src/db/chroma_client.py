@@ -1,10 +1,13 @@
+import logging
+
 import chromadb
 from chromadb.utils import embedding_functions
-import logging
+
 from src.core.config import settings
 from src.core.exceptions import InfrastructureError
 
 logger = logging.getLogger(__name__)
+
 
 class VectorDBManager:
     def __init__(self):
@@ -12,6 +15,7 @@ class VectorDBManager:
             self.client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
         except Exception as e:
             raise InfrastructureError(f"ChromaDB initialization failed: {e}") from e
+
         embedding_device = settings.resolve_device(settings.EMBEDDING_DEVICE)
         self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=settings.EMBEDDING_MODEL,
@@ -22,6 +26,7 @@ class VectorDBManager:
             settings.EMBEDDING_MODEL,
             embedding_device,
         )
+
         self.collection_name = settings.CHROMA_COLLECTION_NAME
         self.collection = self._init_collection()
 
@@ -43,6 +48,7 @@ class VectorDBManager:
         try:
             embeddings = self.embedding_fn([text_for_embedding])
             vector_metadata = {"status": "secured_in_sqlite"}
+
             if metadata:
                 for key, value in metadata.items():
                     if key in {"text", "encrypted_text", "decrypted_text"}:
@@ -51,6 +57,7 @@ class VectorDBManager:
                         continue
                     if isinstance(value, (str, int, float, bool)):
                         vector_metadata[key] = value
+
             self.collection.upsert(
                 ids=[chunk_id],
                 embeddings=embeddings,
@@ -70,11 +77,8 @@ class VectorDBManager:
             logger.error("Vector existence check failed for %s: %s", chunk_id, e)
             return False
 
-    def search_similar(
-        self,
-        query_text: str,
-        n_results: int = 3,
-    ) -> list[dict]:
+    def search_similar(self, query_text: str, n_results: int = 3) -> list[dict]:
+        """Return chunk IDs with distances and metadatas for retrieval filtering."""
         try:
             results = self.collection.query(
                 query_texts=[query_text],
@@ -86,7 +90,7 @@ class VectorDBManager:
             distances = results.get("distances", [[]])[0]
             metadatas = results.get("metadatas", [[]])[0]
 
-            items = []
+            items: list[dict] = []
             for idx, chunk_id in enumerate(ids):
                 items.append(
                     {
@@ -99,8 +103,9 @@ class VectorDBManager:
         except Exception as e:
             logger.error("Vector search error: %s", e)
             return []
-        
+
     def search_similar_ids(self, query_text: str, n_results: int = 2):
+        """Compatibility wrapper returning only chunk IDs."""
         results = self.search_similar(query_text, n_results=n_results)
         return [item["chunk_id"] for item in results]
 
@@ -109,7 +114,7 @@ class VectorDBManager:
             self.collection.delete(ids=[chunk_id])
         except Exception as e:
             raise InfrastructureError(f"Chroma delete failed for {chunk_id}: {e}") from e
-        
+
     def delete_vectors(self, chunk_ids: list[str]) -> None:
         if not chunk_ids:
             return

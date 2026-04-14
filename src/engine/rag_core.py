@@ -26,6 +26,7 @@ class RAGEngine:
             and item["distance"] <= self.settings.RETRIEVAL_MAX_DISTANCE
         ]
         if not filtered:
+            logger.info("No retrieval candidates passed distance threshold for query=%r", query)
             return []
 
         selected = filtered[:top_k]
