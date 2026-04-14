@@ -23,8 +23,32 @@ class RAGEngine:
             query,
             n_results=self.settings.RETRIEVAL_FETCH_K,
         )
+
+        logger.info(
+            "retrieval.start query=%r fetch_k=%s top_k=%s threshold=%s candidates=%s",
+            query[:200],
+            self.settings.RETRIEVAL_FETCH_K,
+            top_k,
+            self.settings.RETRIEVAL_MAX_DISTANCE,
+            len(candidates),
+        )
+
+        if candidates:
+            logger.info(
+                "retrieval.candidates %s",
+                [
+                    {
+                        "chunk_id": item.get("chunk_id"),
+                        "distance": item.get("distance"),
+                        "section_heading": (item.get("metadata") or {}).get("section_heading"),
+                        "topic": (item.get("metadata") or {}).get("topic"),
+                    }
+                    for item in candidates
+                ],
+            )
+
         if not candidates:
-            logger.info("No retrieval candidates for query=%r", query)
+            logger.info("retrieval.empty query=%r", query[:200])
             return []
 
         filtered = [
@@ -34,11 +58,23 @@ class RAGEngine:
             and item["distance"] <= self.settings.RETRIEVAL_MAX_DISTANCE
         ]
 
+        logger.info(
+            "retrieval.filtered kept=%s dropped=%s kept_ids=%s",
+            len(filtered),
+            len(candidates) - len(filtered),
+            [
+                {
+                    "chunk_id": item.get("chunk_id"),
+                    "distance": item.get("distance"),
+                }
+                for item in filtered
+            ],
+        )
+
         if not filtered:
             logger.info(
-                "All retrieval candidates were filtered out by distance threshold. "
-                "query=%r threshold=%s",
-                query,
+                "retrieval.none_passed_threshold query=%r threshold=%s",
+                query[:200],
                 self.settings.RETRIEVAL_MAX_DISTANCE,
             )
             return []
@@ -46,9 +82,11 @@ class RAGEngine:
         selected = filtered[:top_k]
         chunk_ids = [item["chunk_id"] for item in selected]
 
+        logger.info("retrieval.selected chunk_ids=%s", chunk_ids)
+
         items = self.document_repo.get_document_chunks(chunk_ids)
         if not items:
-            logger.info("No SQLite rows found for selected chunk IDs. query=%r", query)
+            logger.info("retrieval.sqlite_empty chunk_ids=%s query=%r", chunk_ids, query[:200])
             return []
 
         contexts: list[str] = []
@@ -60,18 +98,29 @@ class RAGEngine:
                 continue
 
             if len(contexts) >= self.settings.MAX_CONTEXT_CHUNKS:
+                logger.info(
+                    "retrieval.context_limit_reached max_chunks=%s",
+                    self.settings.MAX_CONTEXT_CHUNKS,
+                )
                 break
 
             if total_chars + len(text) > self.settings.MAX_CONTEXT_CHARS:
+                logger.info(
+                    "retrieval.char_budget_reached total_chars=%s next_chunk_chars=%s max_chars=%s",
+                    total_chars,
+                    len(text),
+                    self.settings.MAX_CONTEXT_CHARS,
+                )
                 break
 
             contexts.append(text)
             total_chars += len(text)
 
         logger.info(
-            "Retrieval final context count=%s total_chars=%s query=%r",
+            "retrieval.final contexts=%s total_chars=%s query=%r",
             len(contexts),
             total_chars,
-            query[:120],
+            query[:200],
         )
+
         return contexts

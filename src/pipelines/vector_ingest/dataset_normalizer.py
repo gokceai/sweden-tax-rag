@@ -6,6 +6,12 @@ Normalization policy:
 - collapse repeated spaces
 - collapse excessive blank lines
 - strip leading/trailing whitespace
+
+Important:
+- Preserve existing `content_hash` as-is, because upstream datasets may use it
+  as a document/source hash rather than a per-chunk text hash.
+- Write a separate `chunk_text_hash` derived from the normalized chunk text.
+- Refresh chunk counters only.
 """
 
 import argparse
@@ -33,7 +39,9 @@ def sha256_hex(value: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Normalize chunks JSONL text and refresh counters/hash.")
+    parser = argparse.ArgumentParser(
+        description="Normalize chunks JSONL text and refresh counters/hash."
+    )
     parser.add_argument("--input", required=True, help="Source JSONL")
     parser.add_argument("--output", required=True, help="Normalized JSONL output")
     args = parser.parse_args()
@@ -45,18 +53,20 @@ def main() -> int:
         return 1
 
     changed_rows = 0
-    changed_hash = 0
+    changed_chunk_text_hash = 0
     total_rows = 0
-    out_lines = []
+    out_lines: list[str] = []
 
     for line in in_path.read_text(encoding="utf-8", errors="replace").splitlines():
         if not line.strip():
             continue
+
         row = json.loads(line)
         total_rows += 1
 
         original_text = row.get("text", "")
         normalized_text = normalize_text(original_text) if isinstance(original_text, str) else ""
+
         if normalized_text != original_text:
             changed_rows += 1
 
@@ -64,9 +74,10 @@ def main() -> int:
         row["chunk_word_count"] = len(normalized_text.split())
         row["chunk_char_count"] = len(normalized_text)
 
+        # Preserve upstream content_hash semantics.
         new_chunk_hash = sha256_hex(normalized_text)
         if row.get("chunk_text_hash") != new_chunk_hash:
-            changed_hash += 1
+            changed_chunk_text_hash += 1
         row["chunk_text_hash"] = new_chunk_hash
 
         out_lines.append(json.dumps(row, ensure_ascii=False))
@@ -79,10 +90,10 @@ def main() -> int:
     print(f"output: {out_path}")
     print(f"total_rows: {total_rows}")
     print(f"text_changed_rows: {changed_rows}")
-    print(f"content_hash_changed_rows: {changed_hash}")
+    print(f"chunk_text_hash_changed_rows: {changed_chunk_text_hash}")
+    print("note: content_hash preserved as-is")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
