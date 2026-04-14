@@ -64,10 +64,10 @@ def main() -> int:
         row["chunk_word_count"] = len(normalized_text.split())
         row["chunk_char_count"] = len(normalized_text)
 
-        new_hash = sha256_hex(normalized_text)
-        if row.get("content_hash") != new_hash:
+        new_chunk_hash = sha256_hex(normalized_text)
+        if row.get("chunk_text_hash") != new_chunk_hash:
             changed_hash += 1
-        row["content_hash"] = new_hash
+        row["chunk_text_hash"] = new_chunk_hash
 
         out_lines.append(json.dumps(row, ensure_ascii=False))
 
