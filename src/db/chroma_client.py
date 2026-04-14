@@ -43,7 +43,12 @@ class VectorDBManager:
         except Exception as e:
             raise InfrastructureError(f"ChromaDB initialization failed: {e}") from e
 
-    def add_or_update_vector(self, chunk_id: str, text_for_embedding: str, metadata: dict | None = None):
+    def add_or_update_vector(
+        self,
+        chunk_id: str,
+        text_for_embedding: str,
+        metadata: dict | None = None,
+    ) -> bool:
         """Idempotent write: upsert embedding and metadata without raw text."""
         try:
             embeddings = self.embedding_fn([text_for_embedding])
@@ -78,7 +83,19 @@ class VectorDBManager:
             return False
 
     def search_similar(self, query_text: str, n_results: int = 3) -> list[dict]:
-        """Return chunk IDs with distances and metadatas for retrieval filtering."""
+        """
+        Return retrieval candidates with distances and metadatas.
+
+        Output shape:
+        [
+            {
+                "chunk_id": "...",
+                "distance": 0.42,
+                "metadata": {...},
+            },
+            ...
+        ]
+        """
         try:
             results = self.collection.query(
                 query_texts=[query_text],
@@ -99,13 +116,22 @@ class VectorDBManager:
                         "metadata": metadatas[idx] if idx < len(metadatas) else {},
                     }
                 )
+
+            logger.info(
+                "Vector search returned %s candidates for query=%r",
+                len(items),
+                query_text[:120],
+            )
             return items
         except Exception as e:
             logger.error("Vector search error: %s", e)
             return []
 
-    def search_similar_ids(self, query_text: str, n_results: int = 2):
-        """Compatibility wrapper returning only chunk IDs."""
+    def search_similar_ids(self, query_text: str, n_results: int = 2) -> list[str]:
+        """
+        Compatibility wrapper returning only chunk IDs.
+        Keep this so existing callers do not break.
+        """
         results = self.search_similar(query_text, n_results=n_results)
         return [item["chunk_id"] for item in results]
 

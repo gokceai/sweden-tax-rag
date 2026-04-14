@@ -35,7 +35,7 @@ class Settings:
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 50))
     RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", 3))
     RETRIEVAL_FETCH_K = int(os.getenv("RETRIEVAL_FETCH_K", 8))
-    RETRIEVAL_MAX_DISTANCE = float(os.getenv("RETRIEVAL_MAX_DISTANCE", 1.10))
+    RETRIEVAL_MAX_DISTANCE = float(os.getenv("RETRIEVAL_MAX_DISTANCE", 0.75))
     MAX_CONTEXT_CHUNKS = int(os.getenv("MAX_CONTEXT_CHUNKS", 3))
     MAX_CONTEXT_CHARS = int(os.getenv("MAX_CONTEXT_CHARS", 3500))
 
