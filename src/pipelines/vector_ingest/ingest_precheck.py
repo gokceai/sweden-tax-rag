@@ -42,6 +42,10 @@ def main() -> int:
     chroma_ids = vector_db.list_ids()
     document_store_ids = repo.list_chunk_ids()
 
+
+    stale_in_chroma = chroma_ids - unique_ids
+    stale_in_document_store = document_store_ids - unique_ids
+
     in_chroma = unique_ids & chroma_ids
     in_document_store = unique_ids & document_store_ids
     in_both = in_chroma & in_document_store
@@ -53,6 +57,8 @@ def main() -> int:
     print(f"input_file: {input_path}")
     print(f"total_rows: {total_input}")
     print(f"unique_chunk_ids: {len(unique_ids)}")
+    print(f"stale_in_chroma: {len(stale_in_chroma)}")
+    print(f"stale_in_document_store: {len(stale_in_document_store)}")
     print(f"duplicate_chunk_ids_in_input: {len(duplicate_ids)}")
     if duplicate_ids:
         print(f"duplicate_samples: {sorted(duplicate_ids)[:10]}")

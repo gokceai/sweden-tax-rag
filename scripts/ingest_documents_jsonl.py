@@ -7,12 +7,14 @@ Expected input format (one JSON object per line):
 
 This script is intentionally separate from the pre-chunked pipeline:
 - pipeline_cli.py expects already chunked rows with chunk_id/chunk_index metadata
-- this script accepts raw documents and uses RAGEngine chunking logic
+- this script accepts raw documents, chunks them locally, and ingests each chunk
+  using the shared ChunkIngestService write contract.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -22,9 +24,15 @@ from typing import Any, Iterator
 # Allow running from project root without installing the package.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from src.core.config import settings
+from src.core.dependencies import get_document_repository, get_vector_db_manager
+from src.services.chunk_ingest_service import ChunkIngestService
+
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Ingest raw JSONL documents using RAGEngine.")
+    parser = argparse.ArgumentParser(description="Ingest raw JSONL documents using ChunkIngestService.")
     parser.add_argument("--input", required=True, help="Path to raw documents JSONL")
     parser.add_argument("--limit", type=int, default=0, help="Optional max document count (0=all)")
     parser.add_argument(
@@ -48,6 +56,31 @@ def parse_args() -> argparse.Namespace:
         help="Return non-zero when any row is skipped (invalid JSON, bad type, empty text).",
     )
     return parser.parse_args()
+
+
+def build_chunk_id(source_name: str, chunk_index: int, chunk_text: str) -> str:
+    digest = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()[:16]
+    return f"{source_name}_chunk_{chunk_index}_{digest}"
+
+
+def build_chunk_metadata(row: dict[str, Any], chunk_index: int, chunk_text: str) -> dict:
+    return {
+        "doc_id": row.get("doc_id", row.get("source_name", "unknown")),
+        "chunk_index": chunk_index,
+        "title": row.get("title"),
+        "url": row.get("url"),
+        "source": row.get("source"),
+        "authority": row.get("authority"),
+        "jurisdiction": row.get("jurisdiction"),
+        "language": row.get("language"),
+        "topic": row.get("topic"),
+        "source_family": row.get("source_family"),
+        "source_type": row.get("source_type"),
+        "legal_weight": row.get("legal_weight"),
+        "chunk_word_count": len(chunk_text.split()),
+        "chunk_char_count": len(chunk_text),
+        "content_hash": row.get("content_hash"),
+    }
 
 
 def _iter_rows(path: Path) -> Iterator[tuple[int, dict[str, Any] | None, str | None]]:
@@ -82,17 +115,13 @@ def _reset_chroma(vector_db) -> None:
     try:
         vector_db.client.delete_collection(name=collection_name)
     except Exception:
-        # Collection may not exist on first run; continue with fresh init.
         pass
     vector_db.collection = vector_db._init_collection()
 
 
-def _reset_document_store(document_repo) -> int:
-    ids = list(document_repo.list_chunk_ids())
-    for chunk_id in ids:
-        document_repo.delete_document_chunk(chunk_id)
-    print(f"reset_document_store_deleted_rows: {len(ids)}")
-    return len(ids)
+def _reset_document_store(document_repo) -> None:
+    document_repo.delete_all_chunks()
+    print("reset_document_store_deleted_rows: all")
 
 
 def main() -> int:
@@ -106,15 +135,23 @@ def main() -> int:
         print(f"ERROR: input path is not a file: {input_path}")
         return 1
 
-    from src.core.dependencies import get_document_repository, get_rag_engine, get_vector_db_manager
-
     try:
-        rag_engine = get_rag_engine()
         vector_db = get_vector_db_manager()
         document_repo = get_document_repository()
+        ingest_service = ChunkIngestService(
+            document_repo=document_repo,
+            vector_db=vector_db,
+        )
     except Exception as exc:
         print(f"ERROR: dependency initialization failed: {exc}")
         return 1
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=settings.CHUNK_SIZE,
+        chunk_overlap=settings.CHUNK_OVERLAP,
+        length_function=len,
+        is_separator_regex=False,
+    )
 
     if args.reset_all or args.reset_chroma_collection:
         _reset_chroma(vector_db)
@@ -148,7 +185,23 @@ def main() -> int:
             source_name = _source_name_for_row(row, lineno)
 
             try:
-                chunk_count = rag_engine.ingest_document(text, source_name)
+                chunks = splitter.split_text(text)
+                chunk_count = 0
+
+                for chunk_index, chunk_text in enumerate(chunks):
+                    chunk_id = build_chunk_id(source_name, chunk_index, chunk_text)
+                    metadata = build_chunk_metadata(row, chunk_index, chunk_text)
+
+                    result = ingest_service.ingest_chunk(
+                        chunk_id=chunk_id,
+                        text=chunk_text,
+                        metadata=metadata,
+                    )
+                    if not (result.document_store_written and result.chroma_written):
+                        raise RuntimeError(f"Ingest failed for chunk_id={chunk_id}")
+
+                    chunk_count += 1
+
                 processed_docs += 1
                 total_chunks += chunk_count
                 print(f"OK line={lineno} source='{source_name}' chunks={chunk_count}")

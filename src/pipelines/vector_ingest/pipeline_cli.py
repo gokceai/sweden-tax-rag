@@ -27,6 +27,8 @@ def main() -> int:
     parser.add_argument("--normalized-output", default="", help="Optional normalized output path")
     parser.add_argument("--apply", action="store_true", help="Apply ingest writes")
     parser.add_argument("--reset-chroma-collection", action="store_true", help="Recreate target collection before ingest")
+    parser.add_argument("--reset-document-store", action="store_true", help="Delete all rows from SQLite document store before ingest")
+    parser.add_argument("--reconcile-missing", action="store_true", help="Delete stale chunk IDs from stores after a successful ingest")
     parser.add_argument("--limit", type=int, default=0, help="Optional ingest row limit")
     args = parser.parse_args()
 
@@ -54,10 +56,14 @@ def main() -> int:
         ingest_cmd.append("--apply")
     if args.reset_chroma_collection:
         ingest_cmd.append("--reset-chroma-collection")
+    if args.reset_document_store:
+        ingest_cmd.append("--reset-document-store")
+    if args.reconcile_missing:
+        ingest_cmd.append("--reconcile-missing")
+
     run_step(ingest_cmd, "Ingest")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

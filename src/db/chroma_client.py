@@ -87,6 +87,14 @@ class VectorDBManager:
             self.collection.delete(ids=[chunk_id])
         except Exception as e:
             raise InfrastructureError(f"Chroma delete failed for {chunk_id}: {e}") from e
+        
+    def delete_vectors(self, chunk_ids: list[str]) -> None:
+        if not chunk_ids:
+            return
+        try:
+            self.collection.delete(ids=chunk_ids)
+        except Exception as e:
+            raise InfrastructureError(f"Chroma bulk delete failed: {e}") from e
 
     def list_ids(self) -> set[str]:
         try:

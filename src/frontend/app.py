@@ -15,7 +15,10 @@ def ask_question(question: str) -> tuple[str, str]:
     try:
         from src.core.dependencies import get_answer_generator, get_rag_engine  # noqa: PLC0415
 
-        contexts = get_rag_engine().retrieve_context(prompt, top_k=2)
+        contexts = get_rag_engine().retrieve_context(
+            prompt,
+            top_k=settings.RETRIEVAL_TOP_K,
+        )
         if not contexts:
             return settings.WARNING_PROMPT, ""
         answer = get_answer_generator().generate_answer(prompt, contexts)

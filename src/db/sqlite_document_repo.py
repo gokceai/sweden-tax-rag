@@ -93,26 +93,32 @@ class SQLiteDocumentRepository:
             logger.error("Chunk save failed (%s): %s", chunk_id, e)
             return False
 
-    def get_document_chunk(self, chunk_id: str) -> dict | None:
-        """Read and decrypt chunk from SQLite."""
+    def get_document_chunks(self, chunk_ids: list[str]) -> list[dict]:
+        if not chunk_ids:
+            return []
+
+        placeholders = ",".join("?" for _ in chunk_ids)
         try:
             with self._lock, self._conn() as conn:
-                row = conn.execute(
-                    "SELECT * FROM document_chunks WHERE chunk_id = ?", (chunk_id,)
-                ).fetchone()
-            if row is None:
-                logger.warning("Chunk '%s' not found.", chunk_id)
-                return None
-            result = dict(row)
-            result["decrypted_text"] = self.encryption_manager.decrypt_data(
-                result.pop("encrypted_text")
-            )
-            extra = json.loads(result.pop("extra_metadata", "{}"))
-            result.update(extra)
-            return result
+                rows = conn.execute(
+                    f"SELECT * FROM document_chunks WHERE chunk_id IN ({placeholders})",
+                    chunk_ids,
+                ).fetchall()
+
+            by_id = {}
+            for row in rows:
+                result = dict(row)
+                result["decrypted_text"] = self.encryption_manager.decrypt_data(
+                    result.pop("encrypted_text")
+                )
+                extra = json.loads(result.pop("extra_metadata", "{}"))
+                result.update(extra)
+                by_id[result["chunk_id"]] = result
+
+            return [by_id[cid] for cid in chunk_ids if cid in by_id]
         except Exception as e:
-            logger.error("Chunk read failed (%s): %s", chunk_id, e)
-            raise InfrastructureError(f"SQLite read failed for {chunk_id}: {e}") from e
+            logger.error("Batch chunk read failed: %s", e)
+            raise InfrastructureError(f"SQLite batch read failed: {e}") from e
 
     def has_document_chunk(self, chunk_id: str) -> bool:
         try:
@@ -134,6 +140,28 @@ class SQLiteDocumentRepository:
                 conn.commit()
         except Exception as e:
             raise InfrastructureError(f"SQLite delete failed for {chunk_id}: {e}") from e
+
+    def delete_chunk_ids(self, chunk_ids: list[str]) -> None:
+        if not chunk_ids:
+            return
+        placeholders = ",".join("?" for _ in chunk_ids)
+        try:
+            with self._lock, self._conn() as conn:
+                conn.execute(
+                    f"DELETE FROM document_chunks WHERE chunk_id IN ({placeholders})",
+                    chunk_ids,
+                )
+                conn.commit()
+        except Exception as e:
+            raise InfrastructureError(f"SQLite bulk delete failed: {e}") from e
+
+    def delete_all_chunks(self) -> None:
+        try:
+            with self._lock, self._conn() as conn:
+                conn.execute("DELETE FROM document_chunks")
+                conn.commit()
+        except Exception as e:
+            raise InfrastructureError(f"SQLite full reset failed: {e}") from e
 
     def list_chunk_ids(self) -> set[str]:
         try:
