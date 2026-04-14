@@ -70,17 +70,39 @@ class VectorDBManager:
             logger.error("Vector existence check failed for %s: %s", chunk_id, e)
             return False
 
-    def search_similar_ids(self, query_text: str, n_results: int = 2):
-        """Return IDs for vectors closest to the query text."""
+    def search_similar(
+        self,
+        query_text: str,
+        n_results: int = 3,
+    ) -> list[dict]:
         try:
             results = self.collection.query(
                 query_texts=[query_text],
                 n_results=n_results,
+                include=["distances", "metadatas"],
             )
-            return results["ids"][0] if results["ids"] else []
+
+            ids = results.get("ids", [[]])[0]
+            distances = results.get("distances", [[]])[0]
+            metadatas = results.get("metadatas", [[]])[0]
+
+            items = []
+            for idx, chunk_id in enumerate(ids):
+                items.append(
+                    {
+                        "chunk_id": chunk_id,
+                        "distance": distances[idx] if idx < len(distances) else None,
+                        "metadata": metadatas[idx] if idx < len(metadatas) else {},
+                    }
+                )
+            return items
         except Exception as e:
             logger.error("Vector search error: %s", e)
             return []
+        
+    def search_similar_ids(self, query_text: str, n_results: int = 2):
+        results = self.search_similar(query_text, n_results=n_results)
+        return [item["chunk_id"] for item in results]
 
     def delete_vector(self, chunk_id: str) -> None:
         try:

@@ -79,7 +79,7 @@ Retrieval flow:
   - SQLite stores encrypted text payloads.
 - Deterministic chunk IDs for idempotent ingest.
 - Rollback protection during ingest if one store write fails.
-- Optional startup seeding from `example-dataset/chunks_converted.jsonl`.
+- Optional startup seeding from `example-dataset/chunks.jsonl`.
 - CPU-first runtime with optional INT8 quantization path.
 
 ## Hugging Face Spaces deployment
@@ -238,7 +238,7 @@ Non-blocking warning lines such as `Unrecognized feature: ...` in console are ty
 │   ├── engine/
 │   ├── frontend/app.py
 │   └── pipelines/vector_ingest/
-├── example-dataset/chunks_converted.jsonl
+├── example-dataset/chunks.jsonl
 ├── requirements/
 │   ├── base.in
 │   ├── ml.in
